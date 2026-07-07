@@ -1,4 +1,8 @@
-import { DocumentChunk, getAllChunks, getAllDocuments } from "../../database/documentStore";
+import {
+  DocumentChunk,
+  getAllChunks,
+  getAllDocuments,
+} from "../../database/documentStore";
 
 const STOP_WORDS = new Set([
   "the",
@@ -24,7 +28,20 @@ const STOP_WORDS = new Set([
   "according",
   "document",
   "uploaded",
+  "please",
+  "tell",
+  "me",
+  "about",
 ]);
+
+const SYNONYMS: Record<string, string[]> = {
+  tools: ["gmail", "calendar", "documents", "rag", "email", "draft", "meeting"],
+  support: ["supports", "features", "capabilities", "can"],
+  email: ["gmail", "inbox", "draft", "emails"],
+  meeting: ["calendar", "event", "schedule", "meetings"],
+  document: ["rag", "pdf", "file", "documents"],
+  project: ["taskpilot", "agent", "productivity"],
+};
 
 function cleanText(text: string) {
   return text.replace(/\s+/g, " ").trim();
@@ -38,23 +55,60 @@ function tokenize(text: string) {
     .filter((word) => word.length > 2 && !STOP_WORDS.has(word));
 }
 
-function scoreChunk(questionTokens: string[], chunk: DocumentChunk) {
-  const chunkText = chunk.text.toLowerCase();
+function expandTokens(tokens: string[]) {
+  const expanded = new Set<string>();
 
+  for (const token of tokens) {
+    expanded.add(token);
+
+    const synonyms = SYNONYMS[token];
+
+    if (synonyms) {
+      synonyms.forEach((item) => expanded.add(item));
+    }
+  }
+
+  return Array.from(expanded);
+}
+
+function splitIntoSentences(text: string) {
+  return cleanText(text)
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 20);
+}
+
+function scoreText(tokens: string[], text: string) {
+  const lowerText = text.toLowerCase();
   let score = 0;
 
-  for (const token of questionTokens) {
-    if (chunkText.includes(token)) {
-      score += 1;
+  for (const token of tokens) {
+    if (lowerText.includes(token)) {
+      score += 2;
+    }
+
+    const exactWordRegex = new RegExp(`\\b${token}\\b`, "i");
+
+    if (exactWordRegex.test(lowerText)) {
+      score += 3;
     }
   }
 
   return score;
 }
 
-function getTopChunks(question: string, limit = 3) {
+function scoreChunk(questionTokens: string[], chunk: DocumentChunk) {
+  const baseScore = scoreText(questionTokens, chunk.text);
+
+  const earlyChunkBoost = chunk.chunkIndex === 0 ? 2 : 0;
+
+  return baseScore + earlyChunkBoost;
+}
+
+function getTopChunks(question: string, limit = 4) {
   const chunks = getAllChunks();
-  const questionTokens = tokenize(question);
+  const rawTokens = tokenize(question);
+  const questionTokens = expandTokens(rawTokens);
 
   if (chunks.length === 0) {
     return [];
@@ -75,6 +129,36 @@ function getTopChunks(question: string, limit = 3) {
     .map((item) => item.chunk);
 }
 
+function getRelevantSentences(question: string, chunks: DocumentChunk[], limit = 5) {
+  const rawTokens = tokenize(question);
+  const questionTokens = expandTokens(rawTokens);
+
+  const sentenceScores = chunks.flatMap((chunk) => {
+    const sentences = splitIntoSentences(chunk.text);
+
+    return sentences.map((sentence) => ({
+      sentence,
+      chunk,
+      score: scoreText(questionTokens, sentence),
+    }));
+  });
+
+  const rankedSentences = sentenceScores
+    .sort((a, b) => b.score - a.score)
+    .filter((item) => item.score > 0)
+    .slice(0, limit);
+
+  if (rankedSentences.length === 0) {
+    return chunks.slice(0, 2).map((chunk) => ({
+      sentence: cleanText(chunk.text).slice(0, 500),
+      chunk,
+      score: 1,
+    }));
+  }
+
+  return rankedSentences;
+}
+
 function summarizeLatestDocument() {
   const documents = getAllDocuments();
 
@@ -83,21 +167,38 @@ function summarizeLatestDocument() {
   }
 
   const latestDocument = documents[documents.length - 1];
-  const firstChunks = latestDocument.chunks.slice(0, 3);
+  const firstChunks = latestDocument.chunks.slice(0, 4);
 
-  const context = firstChunks.map((chunk) => chunk.text).join(" ");
+  const context = cleanText(firstChunks.map((chunk) => chunk.text).join(" "));
+  const sentences = splitIntoSentences(context);
+
+  const summarySentences = sentences.slice(0, 5);
 
   return {
     fileName: latestDocument.fileName,
     totalChunks: latestDocument.totalChunks,
-    summaryText: cleanText(context).slice(0, 1200),
+    summaryText:
+      summarySentences.length > 0
+        ? summarySentences.join(" ")
+        : context.slice(0, 1200),
   };
 }
 
 function buildAnswer(question: string, chunks: DocumentChunk[]) {
-  const context = chunks.map((chunk) => chunk.text).join(" ");
+  const relevantSentences = getRelevantSentences(question, chunks);
 
-  const cleanedContext = cleanText(context);
+  const answerText = relevantSentences
+    .map((item) => `- ${item.sentence}`)
+    .join("\n");
+
+  const uniqueSources = Array.from(
+    new Map(
+      relevantSentences.map((item) => [
+        `${item.chunk.fileName}-${item.chunk.chunkIndex}`,
+        item.chunk,
+      ])
+    ).values()
+  );
 
   return `📄 Document Answer
 
@@ -105,20 +206,20 @@ Question:
 ${question}
 
 Answer:
-Based on the uploaded document, the most relevant information is:
+Based on the uploaded document, I found these relevant points:
 
-${cleanedContext.slice(0, 1400)}
+${answerText}
 
 Sources:
-${chunks
-  .map(
-    (chunk) =>
-      `- ${chunk.fileName}, chunk ${chunk.chunkIndex + 1}`
-  )
+${uniqueSources
+  .map((chunk) => `- ${chunk.fileName}, chunk ${chunk.chunkIndex + 1}`)
   .join("\n")}
 
+RAG Mode:
+Local keyword + sentence ranking.
+
 Note:
-This is a local keyword-based RAG prototype. Next, we can upgrade it with embeddings for better semantic search.`;
+This answer is grounded in uploaded document chunks.`;
 }
 
 export async function searchDocuments(question: string): Promise<string> {
@@ -160,8 +261,11 @@ ${summary.totalChunks}
 Summary:
 ${summary.summaryText}
 
-Note:
-This summary is generated from the extracted document text.`;
+Sources:
+- ${summary.fileName}
+
+RAG Mode:
+Latest document summary.`;
   }
 
   const topChunks = getTopChunks(question);
@@ -173,7 +277,12 @@ I could not find a strong match in the uploaded documents for:
 
 ${question}
 
-Try asking with keywords that appear in the document.`;
+Try asking with keywords that appear in the document.
+
+Available Documents:
+${documents
+  .map((document) => `- ${document.fileName} (${document.totalChunks} chunks)`)
+  .join("\n")}`;
   }
 
   return buildAnswer(question, topChunks);
