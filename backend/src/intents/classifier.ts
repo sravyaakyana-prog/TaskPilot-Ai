@@ -81,11 +81,15 @@ export function classifyIntent(message: string): IntentResult {
   }
 
   if (
-    text.includes("pdf") ||
-    text.includes("document") ||
-    text.includes("file") ||
-    text.includes("rag")
-  ) {
+  text.includes("pdf") ||
+  text.includes("document") ||
+  text.includes("file") ||
+  text.includes("rag") ||
+  text.includes("uploaded") ||
+  text.includes("according to") ||
+  text.includes("summarize this") ||
+  text.includes("summarize the uploaded")
+) {
     return {
       intent: "DOCUMENT_QA",
       confidence: 0.88,

@@ -1,6 +1,7 @@
 import { AgentPlan } from "../agents/planner";
 import { createCalendarEvent } from "../tools/calendar/calendar.create";
 import { queryCalendarEvents } from "../tools/calendar/calendar.query";
+import { searchDocuments } from "../tools/document/document.search";
 import { generateEmailDraft } from "../tools/gmail/gmail.draft";
 import { searchEmails } from "../tools/gmail/gmail.search";
 import { summarizeUnreadEmails } from "../tools/gmail/gmail.summary";
@@ -30,7 +31,7 @@ export async function executeTool(
       return await createCalendarEvent(message);
 
     case "document.search":
-      return `Document search tool is planned. User request: "${message}"`;
+      return await searchDocuments(message);
 
     case "task.planner":
       return `Task planner tool is planned. User request: "${message}"`;
