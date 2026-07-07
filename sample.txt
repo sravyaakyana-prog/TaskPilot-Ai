@@ -1,1 +1,0 @@
-TaskPilot AI is a multi-tool productivity agent with Gmail, Calendar, and Document RAG support. It can summarize emails, search Gmail, create drafts, query calendar events, create meetings, and answer questions from uploaded documents.
