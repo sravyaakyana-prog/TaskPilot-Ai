@@ -26,6 +26,19 @@ type DocumentItem = {
   totalChunks: number;
 };
 
+type HistorySummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  lastMessage: {
+    role: "user" | "assistant";
+    content: string;
+    createdAt: string;
+  } | null;
+};
+
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -72,6 +85,13 @@ function timeNow() {
   });
 }
 
+function formatSavedTime(value: string) {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function Home() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -95,6 +115,12 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadingDocument, setUploadingDocument] = useState(false);
 
+  const [history, setHistory] = useState<HistorySummary[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
@@ -113,6 +139,94 @@ export default function Home() {
       }
     } catch {
       setDocuments([]);
+    }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/history");
+      const data = await res.json();
+
+      if (data.success) {
+        setHistory(data.conversations || []);
+      }
+    } catch {
+      setHistory([]);
+    }
+  };
+
+  const loadConversation = async (conversationId: string) => {
+    setLoadingHistory(true);
+
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/history/${conversationId}`
+      );
+      const data = await res.json();
+
+      if (data.success && data.conversation) {
+        setCurrentConversationId(data.conversation.id);
+
+        setMessages(
+          data.conversation.messages.map((message: any) => ({
+            role: message.role,
+            content: message.content,
+            time: formatSavedTime(message.createdAt),
+            agent: message.agent,
+          }))
+        );
+
+        const lastAssistantMessage = [...data.conversation.messages]
+          .reverse()
+          .find((message: any) => message.role === "assistant" && message.agent);
+
+        setLatestAgent(lastAssistantMessage?.agent || null);
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Could not load this conversation.",
+          time: timeNow(),
+        },
+      ]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const startNewChat = () => {
+    setCurrentConversationId(null);
+    setLatestAgent(null);
+    setMessages([
+      {
+        role: "assistant",
+        content:
+          "New chat started. Ask TaskPilot about Gmail, Calendar, documents, or automation.",
+        time: "Now",
+      },
+    ]);
+  };
+
+  const clearHistory = async () => {
+    try {
+      await fetch("http://localhost:5000/api/history", {
+        method: "DELETE",
+      });
+
+      setHistory([]);
+      setCurrentConversationId(null);
+      startNewChat();
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Could not clear chat history.",
+          time: timeNow(),
+        },
+      ]);
     }
   };
 
@@ -187,13 +301,20 @@ You can now ask questions about this document.`
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          conversationId: currentConversationId,
+        }),
       });
 
       const data = await res.json();
 
       if (data.agent) {
         setLatestAgent(data.agent);
+      }
+
+      if (data.conversationId) {
+        setCurrentConversationId(data.conversationId);
       }
 
       setMessages((prev) => [
@@ -205,6 +326,8 @@ You can now ask questions about this document.`
           agent: data.agent,
         },
       ]);
+
+      await fetchHistory();
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -239,6 +362,7 @@ You can now ask questions about this document.`
 
     checkGoogleStatus();
     fetchDocuments();
+    fetchHistory();
   }, []);
 
   useEffect(() => {
@@ -260,7 +384,7 @@ You can now ask questions about this document.`
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_40%_0%,rgba(124,58,237,0.32),transparent_28%),radial-gradient(circle_at_80%_10%,rgba(14,165,233,0.22),transparent_28%)]" />
 
       <div className="relative grid h-screen grid-cols-[260px_1fr_330px]">
-        <aside className="border-r border-white/10 bg-[#070B18]/80 px-5 py-6 backdrop-blur-xl">
+        <aside className="overflow-y-auto border-r border-white/10 bg-[#070B18]/80 px-5 py-6 backdrop-blur-xl">
           <div className="mb-10">
             <h1 className="text-2xl font-black">✦ TaskPilot AI</h1>
             <p className="mt-1 text-sm text-slate-400">
@@ -309,11 +433,57 @@ You can now ask questions about this document.`
           <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
             <p className="text-sm font-semibold">Current Phase</p>
             <p className="mt-1 text-xs text-slate-400">
-              Gmail + Calendar + Document RAG
+              Chat memory + history
             </p>
             <div className="mt-4 h-2 rounded-full bg-slate-800">
-              <div className="h-2 w-[82%] rounded-full bg-gradient-to-r from-cyan-400 to-purple-500" />
+              <div className="h-2 w-[88%] rounded-full bg-gradient-to-r from-cyan-400 to-purple-500" />
             </div>
+          </div>
+
+          <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Recent Chats</p>
+
+              <button
+                onClick={startNewChat}
+                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#050816]"
+              >
+                New
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-56 space-y-2 overflow-y-auto">
+              {history.length === 0 ? (
+                <p className="text-xs text-slate-500">No saved chats yet.</p>
+              ) : (
+                history.slice(0, 6).map((chat) => (
+                  <button
+                    key={chat.id}
+                    onClick={() => loadConversation(chat.id)}
+                    disabled={loadingHistory}
+                    className={`w-full rounded-2xl p-3 text-left text-xs transition ${
+                      currentConversationId === chat.id
+                        ? "bg-cyan-500/15 text-cyan-200"
+                        : "bg-[#050816] text-slate-400 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    <p className="truncate font-semibold">{chat.title}</p>
+                    <p className="mt-1 truncate text-slate-500">
+                      {chat.lastMessage?.content || "No messages"}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+
+            {history.length > 0 && (
+              <button
+                onClick={clearHistory}
+                className="mt-4 w-full rounded-2xl border border-red-400/20 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
+              >
+                Clear History
+              </button>
+            )}
           </div>
         </aside>
 
@@ -359,7 +529,11 @@ You can now ask questions about this document.`
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div>
                 <h3 className="text-lg font-bold">Conversation</h3>
-                <p className="text-sm text-slate-400">Agent workspace</p>
+                <p className="text-sm text-slate-400">
+                  {currentConversationId
+                    ? "Saved conversation"
+                    : "New agent workspace"}
+                </p>
               </div>
 
               <span className="rounded-full bg-purple-500/15 px-4 py-2 text-sm text-purple-300">
@@ -634,8 +808,8 @@ You can now ask questions about this document.`
           <div className="rounded-3xl bg-gradient-to-br from-purple-500/20 to-blue-500/10 p-5">
             <h3 className="text-lg font-bold">Next Build</h3>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Upgrade document search with embeddings so TaskPilot can answer
-              deeper semantic questions from PDFs, notes, and project files.
+              Add database-backed users and persistent memory so TaskPilot can
+              become a production-ready AI assistant.
             </p>
           </div>
         </aside>

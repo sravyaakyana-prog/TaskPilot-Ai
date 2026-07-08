@@ -1,17 +1,17 @@
-import { createLLMProvider } from "../llm";
 import { createAgentPlan } from "../agents/planner";
+import { saveChatExchange } from "../database/chatStore";
+import { createLLMProvider } from "../llm";
 import { executeTool } from "../router/toolRouter";
 
 const llm = createLLMProvider();
 
-export async function generateChatReply(message: string) {
-  // Step 1: Intent Classification + Planning
+export async function generateChatReply(
+  message: string,
+  conversationId?: string
+) {
   const plan = createAgentPlan(message);
-
-  // Step 2: Execute Tool (mock for now)
   const toolResult = await executeTool(plan, message);
 
-  // Step 3: Build prompt for LLM
   const systemPrompt = `
 You are TaskPilot AI.
 
@@ -35,27 +35,29 @@ ${toolResult ?? "No tool executed"}
 Answer naturally and helpfully.
 `;
 
-  // Step 4: Generate final response
   const reply = await llm.generateResponse([
-    {
-      role: "system",
-      content: systemPrompt,
-    },
-    {
-      role: "user",
-      content: message,
-    },
+    { role: "system", content: systemPrompt },
+    { role: "user", content: message },
   ]);
 
-  // Step 5: Return structured result
+  const agentTrace = {
+    intent: plan.intent.intent,
+    confidence: plan.intent.confidence,
+    tool: plan.toolName,
+    toolRequired: plan.toolRequired,
+    steps: plan.steps,
+  };
+
+  const conversation = saveChatExchange({
+    conversationId,
+    userMessage: message,
+    assistantMessage: reply,
+    agent: agentTrace,
+  });
+
   return {
     reply,
-    agent: {
-      intent: plan.intent.intent,
-      confidence: plan.intent.confidence,
-      tool: plan.toolName,
-      toolRequired: plan.toolRequired,
-      steps: plan.steps,
-    },
+    conversationId: conversation.id,
+    agent: agentTrace,
   };
 }

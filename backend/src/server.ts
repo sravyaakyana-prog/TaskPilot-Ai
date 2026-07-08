@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import historyRoutes from "./routes/history.routes";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
@@ -29,6 +30,7 @@ app.get("/", (_req: Request, res: Response) => {
 app.use("/api/chat", chatRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/documents", documentRoutes);
+app.use("/api/history", historyRoutes);
 
 app.listen(Number(env.PORT), () => {
   console.log(`TaskPilot AI backend running on port ${env.PORT}`);
