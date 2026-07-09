@@ -46,36 +46,34 @@ type Message = {
   agent?: AgentTrace;
 };
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
 const quickActions = [
   {
-    icon: "📧",
+    icon: "📩",
     title: "Summarize Inbox",
+    description: "Unread Gmail summary",
     prompt: "Summarize my unread emails today",
   },
   {
     icon: "🔎",
     title: "Find Internships",
+    description: "Search Gmail quickly",
     prompt: "Find emails about internships",
   },
   {
     icon: "📅",
     title: "Today Calendar",
+    description: "Check your schedule",
     prompt: "What meetings do I have today?",
   },
   {
     icon: "📄",
     title: "Summarize Doc",
+    description: "Ask uploaded files",
     prompt: "What is this document about?",
   },
-];
-
-const navItems = [
-  "Chat",
-  "Gmail",
-  "Calendar",
-  "Documents",
-  "Automation",
-  "Settings",
 ];
 
 function timeNow() {
@@ -92,8 +90,25 @@ function formatSavedTime(value: string) {
   });
 }
 
+function getInitials(name?: string, email?: string) {
+  const source = name || email || "User";
+
+  return source
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function getFirstName(name?: string) {
+  if (!name) return "there";
+  return name.split(" ")[0];
+}
+
 export default function Home() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const composerFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -125,13 +140,28 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
 
+  const displayName =
+    googleStatus.connected && googleStatus.user?.name
+      ? getFirstName(googleStatus.user.name)
+      : "there";
+
+  const fullName =
+    googleStatus.user?.name || googleStatus.user?.email || "Guest User";
+
+  const userEmail = googleStatus.user?.email || "Connect Google account";
+
+  const userInitials = getInitials(
+    googleStatus.user?.name,
+    googleStatus.user?.email
+  );
+
   const connectGoogle = () => {
-    window.location.href = "http://localhost:5000/api/auth/google";
+    window.location.href = `${API_BASE_URL}/api/auth/google`;
   };
 
   const fetchDocuments = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/documents");
+      const res = await fetch(`${API_BASE_URL}/api/documents`);
       const data = await res.json();
 
       if (data.success) {
@@ -144,7 +174,7 @@ export default function Home() {
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/history");
+      const res = await fetch(`${API_BASE_URL}/api/history`);
       const data = await res.json();
 
       if (data.success) {
@@ -159,9 +189,7 @@ export default function Home() {
     setLoadingHistory(true);
 
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/history/${conversationId}`
-      );
+      const res = await fetch(`${API_BASE_URL}/api/history/${conversationId}`);
       const data = await res.json();
 
       if (data.success && data.conversation) {
@@ -178,7 +206,9 @@ export default function Home() {
 
         const lastAssistantMessage = [...data.conversation.messages]
           .reverse()
-          .find((message: any) => message.role === "assistant" && message.agent);
+          .find(
+            (message: any) => message.role === "assistant" && message.agent
+          );
 
         setLatestAgent(lastAssistantMessage?.agent || null);
       }
@@ -211,7 +241,7 @@ export default function Home() {
 
   const clearHistory = async () => {
     try {
-      await fetch("http://localhost:5000/api/history", {
+      await fetch(`${API_BASE_URL}/api/history`, {
         method: "DELETE",
       });
 
@@ -239,7 +269,7 @@ export default function Home() {
     formData.append("file", selectedFile);
 
     try {
-      const res = await fetch("http://localhost:5000/api/documents/upload", {
+      const res = await fetch(`${API_BASE_URL}/api/documents/upload`, {
         method: "POST",
         body: formData,
       });
@@ -278,6 +308,63 @@ You can now ask questions about this document.`
     }
   };
 
+  const uploadComposerDocument = async (file: File) => {
+    setUploadingDocument(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/documents/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.success
+            ? `📄 Document uploaded successfully.
+
+File: ${data.document.fileName}
+Chunks: ${data.document.totalChunks}
+
+You can now ask questions about this document.`
+            : data.error || "Failed to upload document.",
+          time: timeNow(),
+        },
+      ]);
+
+      await fetchDocuments();
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Document upload failed. Make sure backend is running.",
+          time: timeNow(),
+        },
+      ]);
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
+  const handleImageComingSoon = () => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content:
+          "🖼️ Image upload is coming soon. For now, TaskPilot supports PDF and TXT document upload.",
+        time: timeNow(),
+      },
+    ]);
+  };
+
   const sendMessage = async (custom?: string) => {
     const text = custom || input;
     if (!text.trim() || loading) return;
@@ -296,7 +383,7 @@ You can now ask questions about this document.`
     setStep(0);
 
     try {
-      const res = await fetch("http://localhost:5000/api/chat", {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -345,7 +432,7 @@ You can now ask questions about this document.`
   useEffect(() => {
     async function checkGoogleStatus() {
       try {
-        const res = await fetch("http://localhost:5000/api/auth/google/status");
+        const res = await fetch(`${API_BASE_URL}/api/auth/google/status`);
         const data = await res.json();
 
         setGoogleStatus({
@@ -380,164 +467,159 @@ You can now ask questions about this document.`
   }, [loading]);
 
   return (
-    <main className="h-screen overflow-hidden bg-[#050816] text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_40%_0%,rgba(124,58,237,0.32),transparent_28%),radial-gradient(circle_at_80%_10%,rgba(14,165,233,0.22),transparent_28%)]" />
+    <main className="h-screen overflow-hidden bg-[#060A14] text-white">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(124,58,237,0.28),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.18),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(79,70,229,0.12),transparent_35%)]" />
 
-      <div className="relative grid h-screen grid-cols-[260px_1fr_330px]">
-        <aside className="overflow-y-auto border-r border-white/10 bg-[#070B18]/80 px-5 py-6 backdrop-blur-xl">
-          <div className="mb-10">
-            <h1 className="text-2xl font-black">✦ TaskPilot AI</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              AI productivity workspace
-            </p>
+      <div className="relative grid h-screen grid-cols-[290px_1fr_370px]">
+        <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#070B16]/80 backdrop-blur-2xl">
+          <div className="px-5 py-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-lg shadow-lg shadow-cyan-500/10">
+                ✦
+              </div>
+
+              <div>
+                <h1 className="text-xl font-black tracking-tight">
+                  TaskPilot AI
+                </h1>
+                <p className="text-xs text-slate-400">
+                  AI Productivity Workspace
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={startNewChat}
+              className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-violet-500/20 transition hover:scale-[1.01]"
+            >
+              + New Chat
+            </button>
           </div>
 
-          <nav className="space-y-2">
-            {navItems.map((item, index) => {
-              const isActive = index === 0;
-              const isGoogleTool = item === "Gmail" || item === "Calendar";
-              const isDocumentTool = item === "Documents";
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/10">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold">Recent Chats</p>
 
-              return (
-                <button
-                  key={item}
-                  className={`flex w-full items-center justify-between rounded-2xl px-4 py-3.5 text-sm transition ${
-                    isActive
-                      ? "bg-white text-[#050816] shadow-lg"
-                      : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
-                  }`}
-                >
-                  <span>{item}</span>
+                {history.length > 0 && (
+                  <button
+                    onClick={clearHistory}
+                    className="text-xs font-semibold text-red-300 hover:text-red-200"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
 
-                  {!isActive && (
-                    <span
-                      className={`rounded-full px-2 py-1 text-xs ${
-                        (isGoogleTool && googleStatus.connected) ||
-                        (isDocumentTool && documents.length > 0)
-                          ? "bg-emerald-500/10 text-emerald-300"
-                          : "bg-slate-800 text-slate-400"
+              <div className="mt-4 max-h-[530px] space-y-2 overflow-y-auto pr-1">
+                {history.length === 0 ? (
+                  <p className="rounded-2xl bg-[#050816] p-3 text-xs text-slate-500">
+                    No saved chats yet.
+                  </p>
+                ) : (
+                  history.slice(0, 12).map((chat) => (
+                    <button
+                      key={chat.id}
+                      onClick={() => loadConversation(chat.id)}
+                      disabled={loadingHistory}
+                      className={`w-full rounded-2xl p-3 text-left transition ${
+                        currentConversationId === chat.id
+                          ? "bg-cyan-500/15 text-cyan-100 ring-1 ring-cyan-400/20"
+                          : "bg-[#050816] text-slate-400 hover:bg-white/[0.06] hover:text-white"
                       }`}
                     >
-                      {isGoogleTool && googleStatus.connected
-                        ? "Connected"
-                        : isDocumentTool && documents.length > 0
-                        ? "Ready"
-                        : "Soon"}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-xs font-bold">
+                          {chat.title}
+                        </p>
+                        <span className="shrink-0 text-[10px] text-slate-500">
+                          {formatSavedTime(chat.updatedAt)}
+                        </span>
+                      </div>
 
-          <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-sm font-semibold">Current Phase</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Chat memory + history
-            </p>
-            <div className="mt-4 h-2 rounded-full bg-slate-800">
-              <div className="h-2 w-[88%] rounded-full bg-gradient-to-r from-cyan-400 to-purple-500" />
+                      <p className="mt-1 truncate text-xs text-slate-500">
+                        {chat.lastMessage?.content || "No messages"}
+                      </p>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Recent Chats</p>
+          <div className="border-t border-white/10 p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-black text-white">
+                {userInitials}
+              </div>
 
-              <button
-                onClick={startNewChat}
-                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#050816]"
-              >
-                New
-              </button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{fullName}</p>
+                <p className="truncate text-xs text-slate-500">{userEmail}</p>
+              </div>
             </div>
-
-            <div className="mt-4 max-h-56 space-y-2 overflow-y-auto">
-              {history.length === 0 ? (
-                <p className="text-xs text-slate-500">No saved chats yet.</p>
-              ) : (
-                history.slice(0, 6).map((chat) => (
-                  <button
-                    key={chat.id}
-                    onClick={() => loadConversation(chat.id)}
-                    disabled={loadingHistory}
-                    className={`w-full rounded-2xl p-3 text-left text-xs transition ${
-                      currentConversationId === chat.id
-                        ? "bg-cyan-500/15 text-cyan-200"
-                        : "bg-[#050816] text-slate-400 hover:bg-white/[0.06] hover:text-white"
-                    }`}
-                  >
-                    <p className="truncate font-semibold">{chat.title}</p>
-                    <p className="mt-1 truncate text-slate-500">
-                      {chat.lastMessage?.content || "No messages"}
-                    </p>
-                  </button>
-                ))
-              )}
-            </div>
-
-            {history.length > 0 && (
-              <button
-                onClick={clearHistory}
-                className="mt-4 w-full rounded-2xl border border-red-400/20 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
-              >
-                Clear History
-              </button>
-            )}
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col px-8 py-7">
-          <header className="mb-6 flex items-center justify-between">
+        <section className="flex min-h-0 flex-col px-9 py-7">
+          <header className="flex items-start justify-between gap-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
+              <p className="text-xs font-bold uppercase tracking-[0.45em] text-cyan-300">
                 Multi-Tool AI Agent
               </p>
-              <h2 className="mt-2 bg-gradient-to-r from-purple-200 via-cyan-200 to-blue-300 bg-clip-text text-4xl font-black text-transparent">
-                Good morning, Sravya
+
+              <h2 className="mt-3 bg-gradient-to-r from-white via-cyan-100 to-violet-200 bg-clip-text text-4xl font-black tracking-tight text-transparent">
+                Hi, {displayName} 👋
               </h2>
-              <p className="mt-2 text-slate-400">
-                One workspace for Gmail, Calendar, documents, and automation.
+
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Your AI workspace for Gmail, Calendar, documents, and automation.
               </p>
             </div>
 
-            <div className="flex gap-3">
-              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-5 py-3 text-sm text-emerald-300">
+            <div className="flex shrink-0 gap-3">
+              <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2.5 text-sm font-semibold text-emerald-300">
                 ● Backend Online
               </span>
-              <span className="rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-sm text-slate-300">
+
+              <span className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm text-slate-300">
                 Mock Provider
               </span>
             </div>
           </header>
 
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="mt-7 grid gap-4 md:grid-cols-4">
             {quickActions.map((action) => (
               <button
                 key={action.title}
                 onClick={() => sendMessage(action.prompt)}
-                className="group rounded-3xl border border-white/10 bg-white/[0.045] p-4 text-left transition hover:-translate-y-1 hover:border-cyan-400/40 hover:bg-white/[0.07]"
+                className="group rounded-3xl border border-white/10 bg-white/[0.045] p-5 text-left shadow-xl shadow-black/10 transition hover:-translate-y-1 hover:border-cyan-400/30 hover:bg-white/[0.075]"
               >
-                <div className="text-xl">{action.icon}</div>
-                <p className="mt-3 font-semibold">{action.title}</p>
-                <p className="mt-1 text-xs text-slate-500">Run action</p>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-cyan-400/15 text-xl ring-1 ring-white/10">
+                  {action.icon}
+                </div>
+
+                <p className="mt-4 font-bold">{action.title}</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {action.description}
+                </p>
               </button>
             ))}
           </div>
 
-          <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#081124]/85 shadow-2xl backdrop-blur-xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+          <div className="mt-7 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#081120]/80 shadow-2xl shadow-black/30 backdrop-blur-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
               <div>
-                <h3 className="text-lg font-bold">Conversation</h3>
-                <p className="text-sm text-slate-400">
+                <h3 className="text-lg font-black">Conversation</h3>
+                <p className="mt-1 text-sm text-slate-500">
                   {currentConversationId
                     ? "Saved conversation"
                     : "New agent workspace"}
                 </p>
               </div>
 
-              <span className="rounded-full bg-purple-500/15 px-4 py-2 text-sm text-purple-300">
-                Agent Mode
+              <span className="rounded-full bg-violet-500/15 px-4 py-2 text-sm font-semibold text-violet-200">
+                ✦ Agent Mode
               </span>
             </div>
 
@@ -550,48 +632,54 @@ You can now ask questions about this document.`
                   }`}
                 >
                   {msg.role === "assistant" && (
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg shadow-violet-500/20">
                       ✦
                     </div>
                   )}
 
-                  <div className="max-w-[72%]">
+                  <div className="max-w-[74%]">
                     <div
-                      className={`whitespace-pre-wrap rounded-3xl px-5 py-4 text-sm leading-7 ${
+                      className={`whitespace-pre-wrap rounded-3xl px-5 py-4 text-sm leading-7 shadow-lg ${
                         msg.role === "user"
-                          ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white"
-                          : "bg-white/[0.07] text-slate-100"
+                          ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-violet-500/20"
+                          : "bg-white/[0.075] text-slate-100 shadow-black/10"
                       }`}
                     >
                       {msg.content}
                     </div>
 
                     {msg.agent && (
-                      <div className="mt-3 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-200">
+                      <div className="mt-3 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-xs font-medium text-cyan-200">
                         Intent: {msg.agent.intent} · Tool:{" "}
                         {msg.agent.tool ?? "None"}
                       </div>
                     )}
 
                     <p
-                      className={`mt-2 text-xs text-slate-500 ${
+                      className={`mt-2 text-xs text-slate-600 ${
                         msg.role === "user" ? "text-right" : "text-left"
                       }`}
                     >
                       {msg.time}
                     </p>
                   </div>
+
+                  {msg.role === "user" && (
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-xs font-black text-[#060A14]">
+                      {userInitials}
+                    </div>
+                  )}
                 </div>
               ))}
 
               {loading && (
                 <div className="flex gap-4">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400">
                     ✦
                   </div>
 
-                  <div className="w-[520px] rounded-3xl bg-white/[0.07] p-5">
-                    <p className="text-sm text-slate-300">
+                  <div className="w-[620px] rounded-3xl border border-white/10 bg-white/[0.065] p-5 shadow-xl shadow-black/10">
+                    <p className="text-sm font-semibold text-slate-200">
                       TaskPilot is working...
                     </p>
 
@@ -602,12 +690,13 @@ You can now ask questions about this document.`
                             <div
                               className={`h-1.5 rounded-full ${
                                 i <= step
-                                  ? "bg-gradient-to-r from-cyan-400 to-purple-500"
+                                  ? "bg-gradient-to-r from-cyan-400 to-violet-500"
                                   : "bg-slate-800"
                               }`}
                             />
+
                             <p
-                              className={`mt-2 text-xs ${
+                              className={`mt-2 text-xs font-medium ${
                                 i <= step ? "text-cyan-300" : "text-slate-500"
                               }`}
                             >
@@ -624,65 +713,113 @@ You can now ask questions about this document.`
               <div ref={bottomRef} />
             </div>
 
-            <div className="border-t border-white/10 p-4">
-              <div className="flex gap-3 rounded-3xl bg-[#050816] p-3">
+            <div className="border-t border-white/10 p-5">
+              <div className="flex items-center gap-3 rounded-3xl border border-white/10 bg-[#050816] p-3">
+                <input
+                  ref={composerFileInputRef}
+                  type="file"
+                  accept=".txt,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+
+                    if (file) {
+                      uploadComposerDocument(file);
+                    }
+
+                    e.target.value = "";
+                  }}
+                />
+
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                   placeholder="Ask TaskPilot anything..."
-                  className="flex-1 bg-transparent px-4 text-sm outline-none placeholder:text-slate-500"
+                  className="flex-1 bg-transparent px-3 text-sm text-slate-100 outline-none placeholder:text-slate-600"
                 />
 
                 <button
+                  type="button"
+                  onClick={() => composerFileInputRef.current?.click()}
+                  disabled={uploadingDocument}
+                  title="Upload PDF or TXT"
+                  className="rounded-2xl px-3 py-2 text-slate-500 hover:bg-white/[0.06] hover:text-white disabled:opacity-50"
+                >
+                  📎
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleImageComingSoon}
+                  title="Image upload coming soon"
+                  className="rounded-2xl px-3 py-2 text-slate-500 hover:bg-white/[0.06] hover:text-white"
+                >
+                  🖼️
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => sendMessage()}
-                  disabled={loading}
-                  className="rounded-2xl bg-white px-6 py-3 text-sm font-bold text-[#050816] transition hover:scale-[1.02] disabled:opacity-50"
+                  disabled={loading || !input.trim()}
+                  className="rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-violet-500/25 transition hover:scale-[1.02] disabled:opacity-50"
                 >
                   Send
                 </button>
               </div>
+
+              <p className="mt-3 text-center text-xs text-slate-600">
+                TaskPilot AI may make mistakes. Verify important information.
+              </p>
             </div>
           </div>
         </section>
 
-        <aside className="space-y-5 overflow-y-auto border-l border-white/10 bg-[#070B18]/75 p-6 backdrop-blur-xl">
-          <div className="rounded-3xl bg-white/[0.045] p-5">
-            <h3 className="text-lg font-bold">Agent Trace</h3>
+        <aside className="min-h-0 space-y-5 overflow-y-auto border-l border-white/10 bg-[#070B16]/75 p-6 backdrop-blur-2xl">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-xl shadow-black/10">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-300">
+                〽️
+              </div>
+              <h3 className="text-lg font-black">Agent Trace</h3>
+            </div>
 
             {latestAgent ? (
-              <div className="mt-5 space-y-4">
+              <div className="mt-5 space-y-3">
                 <div className="rounded-2xl bg-[#050816] p-4">
                   <p className="text-xs uppercase tracking-wider text-slate-500">
                     Intent
                   </p>
-                  <p className="mt-1 font-semibold text-cyan-300">
+                  <p className="mt-1 font-bold text-cyan-300">
                     {latestAgent.intent}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-[#050816] p-4">
-                  <p className="text-xs uppercase tracking-wider text-slate-500">
-                    Confidence
-                  </p>
-                  <p className="mt-1 font-semibold">
-                    {Math.round(latestAgent.confidence * 100)}%
-                  </p>
-                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-[#050816] p-4">
+                    <p className="text-xs uppercase tracking-wider text-slate-500">
+                      Confidence
+                    </p>
+                    <p className="mt-1 font-bold">
+                      {Math.round(latestAgent.confidence * 100)}%
+                    </p>
+                  </div>
 
-                <div className="rounded-2xl bg-[#050816] p-4">
-                  <p className="text-xs uppercase tracking-wider text-slate-500">
-                    Selected Tool
-                  </p>
-                  <p className="mt-1 font-semibold text-purple-300">
-                    {latestAgent.tool ?? "None"}
-                  </p>
+                  <div className="rounded-2xl bg-[#050816] p-4">
+                    <p className="text-xs uppercase tracking-wider text-slate-500">
+                      Tool
+                    </p>
+                    <p className="mt-1 truncate font-bold text-violet-300">
+                      {latestAgent.tool ?? "None"}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl bg-[#050816] p-4">
                   <p className="text-xs uppercase tracking-wider text-slate-500">
                     Execution Steps
                   </p>
+
                   <div className="mt-3 space-y-2">
                     {latestAgent.steps.map((item, index) => (
                       <div
@@ -697,33 +834,44 @@ You can now ask questions about this document.`
                 </div>
               </div>
             ) : (
-              <p className="mt-5 text-sm text-slate-400">
-                Send a message to view intent, selected tool, and execution
-                steps.
-              </p>
+              <div className="mt-5 rounded-2xl bg-[#050816] p-4">
+                <p className="text-sm leading-6 text-slate-400">
+                  Send a message to view intent, selected tool, confidence, and
+                  execution steps.
+                </p>
+              </div>
             )}
           </div>
 
-          <div className="rounded-3xl bg-white/[0.045] p-5">
-            <h3 className="text-lg font-bold">Connected Tools</h3>
+          <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-xl shadow-black/10">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-lg font-black">Connected Tools</h3>
+              <span className="text-xs font-semibold text-cyan-300">Status</span>
+            </div>
 
-            <div className="mt-5 space-y-4">
+            <div className="space-y-3">
               {["Gmail", "Calendar"].map((tool) => (
                 <div
                   key={tool}
-                  className="flex items-center justify-between gap-3"
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-[#050816] p-3"
                 >
-                  <div className="min-w-0">
-                    <p className="font-semibold">{tool}</p>
-                    <p className="truncate text-xs text-slate-500">
-                      {googleStatus.connected
-                        ? googleStatus.user?.email || "Connected"
-                        : "Not connected"}
-                    </p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06]">
+                      {tool === "Gmail" ? "📩" : "📅"}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="font-bold">{tool}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {googleStatus.connected
+                          ? googleStatus.user?.email || "Connected"
+                          : "Not connected"}
+                      </p>
+                    </div>
                   </div>
 
                   {googleStatus.connected ? (
-                    <span className="shrink-0 rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+                    <span className="shrink-0 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                       Connected
                     </span>
                   ) : (
@@ -737,67 +885,37 @@ You can now ask questions about this document.`
                 </div>
               ))}
 
-              <div className="rounded-2xl border border-white/10 bg-[#050816] p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">Documents</p>
-                    <p className="text-xs text-slate-500">
-                      {documents.length > 0
-                        ? `${documents.length} uploaded`
-                        : "No documents uploaded"}
-                    </p>
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#050816] p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06]">
+                    📄
                   </div>
 
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs ${
-                      documents.length > 0
-                        ? "bg-emerald-500/10 text-emerald-300"
-                        : "bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {documents.length > 0 ? "Ready" : "Upload"}
-                  </span>
+                  <div>
+                    <p className="font-bold">Documents</p>
+                    <p className="text-xs text-slate-500">
+                      {documents.length} uploaded
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-4 space-y-3">
-                  <input
-                    type="file"
-                    accept=".txt,.pdf"
-                    onChange={(e) =>
-                      setSelectedFile(e.target.files?.[0] || null)
-                    }
-                    className="w-full text-xs text-slate-400 file:mr-3 file:rounded-full file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#050816]"
-                  />
-
-                  <button
-                    onClick={uploadDocument}
-                    disabled={!selectedFile || uploadingDocument}
-                    className="w-full rounded-2xl bg-white px-4 py-2 text-xs font-bold text-[#050816] disabled:opacity-50"
-                  >
-                    {uploadingDocument ? "Uploading..." : "Upload Document"}
-                  </button>
-
-                  {documents.slice(0, 3).map((document) => (
-                    <div
-                      key={document.id}
-                      className="rounded-xl bg-white/[0.04] p-3"
-                    >
-                      <p className="truncate text-xs font-semibold">
-                        {document.fileName}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {document.totalChunks} chunk(s)
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                  {documents.length > 0 ? "Ready" : "Upload"}
+                </span>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-semibold">Automation</p>
-                  <p className="text-xs text-slate-500">Coming soon</p>
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-[#050816] p-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06]">
+                    ⚡
+                  </div>
+
+                  <div>
+                    <p className="font-bold">Automation</p>
+                    <p className="text-xs text-slate-500">Coming soon</p>
+                  </div>
                 </div>
+
                 <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400">
                   Soon
                 </span>
@@ -805,12 +923,59 @@ You can now ask questions about this document.`
             </div>
           </div>
 
-          <div className="rounded-3xl bg-gradient-to-br from-purple-500/20 to-blue-500/10 p-5">
-            <h3 className="text-lg font-bold">Next Build</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Add database-backed users and persistent memory so TaskPilot can
-              become a production-ready AI assistant.
-            </p>
+          <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-xl shadow-black/10">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black">Documents</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {documents.length} uploaded
+                </p>
+              </div>
+
+              <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                {documents.length > 0 ? "Ready" : "Empty"}
+              </span>
+            </div>
+
+            <div className="mt-4">
+              <label className="flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-white/15 bg-[#050816] px-4 py-4 text-sm font-semibold text-slate-300 transition hover:border-cyan-400/30 hover:bg-white/[0.04]">
+                <input
+                  type="file"
+                  accept=".txt,.pdf"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  className="hidden"
+                />
+                {selectedFile ? selectedFile.name : "Upload PDF or TXT"}
+              </label>
+
+              <button
+                onClick={uploadDocument}
+                disabled={!selectedFile || uploadingDocument}
+                className="mt-3 w-full rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#060A14] transition hover:scale-[1.01] disabled:opacity-45"
+              >
+                {uploadingDocument ? "Uploading..." : "Upload Document"}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {documents.slice(0, 4).map((document) => (
+                <div
+                  key={document.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-[#050816] p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold">
+                      {document.fileName}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {document.totalChunks} chunk(s)
+                    </p>
+                  </div>
+
+                  <span className="text-slate-600">⋮</span>
+                </div>
+              ))}
+            </div>
           </div>
         </aside>
       </div>

@@ -1,11 +1,12 @@
 import fs from "fs";
 import path from "path";
-import pdfParse from "pdf-parse";
 import {
   DocumentChunk,
   saveDocument,
   StoredDocument,
 } from "../database/documentStore";
+
+const pdfParse = require("pdf-parse");
 
 function generateId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -15,7 +16,11 @@ function cleanText(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function chunkText(text: string, documentId: string, fileName: string): DocumentChunk[] {
+function chunkText(
+  text: string,
+  documentId: string,
+  fileName: string
+): DocumentChunk[] {
   const cleaned = cleanText(text);
   const chunkSize = 900;
   const overlap = 120;
@@ -49,7 +54,9 @@ function chunkText(text: string, documentId: string, fileName: string): Document
 
 async function extractTextFromPdf(filePath: string) {
   const buffer = fs.readFileSync(filePath);
+
   const data = await pdfParse(buffer);
+
   return data.text || "";
 }
 
