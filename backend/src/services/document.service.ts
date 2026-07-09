@@ -87,7 +87,7 @@ export async function processUploadedDocument(file: Express.Multer.File) {
     chunks,
   };
 
-  saveDocument(document);
+  await saveDocument(document);
 
   return {
     id: document.id,

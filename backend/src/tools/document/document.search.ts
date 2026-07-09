@@ -99,14 +99,13 @@ function scoreText(tokens: string[], text: string) {
 
 function scoreChunk(questionTokens: string[], chunk: DocumentChunk) {
   const baseScore = scoreText(questionTokens, chunk.text);
-
   const earlyChunkBoost = chunk.chunkIndex === 0 ? 2 : 0;
 
   return baseScore + earlyChunkBoost;
 }
 
-function getTopChunks(question: string, limit = 4) {
-  const chunks = getAllChunks();
+async function getTopChunks(question: string, limit = 4) {
+  const chunks = await getAllChunks();
   const rawTokens = tokenize(question);
   const questionTokens = expandTokens(rawTokens);
 
@@ -159,14 +158,14 @@ function getRelevantSentences(question: string, chunks: DocumentChunk[], limit =
   return rankedSentences;
 }
 
-function summarizeLatestDocument() {
-  const documents = getAllDocuments();
+async function summarizeLatestDocument() {
+  const documents = await getAllDocuments();
 
   if (documents.length === 0) {
     return null;
   }
 
-  const latestDocument = documents[documents.length - 1];
+  const latestDocument = documents[0];
   const firstChunks = latestDocument.chunks.slice(0, 4);
 
   const context = cleanText(firstChunks.map((chunk) => chunk.text).join(" "));
@@ -216,14 +215,14 @@ ${uniqueSources
   .join("\n")}
 
 RAG Mode:
-Local keyword + sentence ranking.
+MongoDB document chunks + local sentence ranking.
 
 Note:
 This answer is grounded in uploaded document chunks.`;
 }
 
 export async function searchDocuments(question: string): Promise<string> {
-  const documents = getAllDocuments();
+  const documents = await getAllDocuments();
 
   if (documents.length === 0) {
     return `📄 Document Q&A
@@ -242,7 +241,7 @@ Upload a PDF or TXT file first, then ask a question about it.`;
     lowerQuestion.includes("what is the document about");
 
   if (wantsSummary) {
-    const summary = summarizeLatestDocument();
+    const summary = await summarizeLatestDocument();
 
     if (!summary) {
       return `📄 Document Q&A
@@ -265,10 +264,10 @@ Sources:
 - ${summary.fileName}
 
 RAG Mode:
-Latest document summary.`;
+MongoDB latest document summary.`;
   }
 
-  const topChunks = getTopChunks(question);
+  const topChunks = await getTopChunks(question);
 
   if (topChunks.length === 0) {
     return `📄 Document Answer

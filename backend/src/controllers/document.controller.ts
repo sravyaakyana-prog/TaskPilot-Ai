@@ -28,16 +28,25 @@ export async function uploadDocumentController(req: Request, res: Response) {
   }
 }
 
-export function listDocumentsController(_req: Request, res: Response) {
-  const documents = getAllDocuments().map((document) => ({
-    id: document.id,
-    fileName: document.fileName,
-    uploadedAt: document.uploadedAt,
-    totalChunks: document.totalChunks,
-  }));
+export async function listDocumentsController(_req: Request, res: Response) {
+  try {
+    const documents = (await getAllDocuments()).map((document) => ({
+      id: document.id,
+      fileName: document.fileName,
+      uploadedAt: document.uploadedAt,
+      totalChunks: document.totalChunks,
+    }));
 
-  return res.json({
-    success: true,
-    documents,
-  });
+    return res.json({
+      success: true,
+      documents,
+    });
+  } catch (error) {
+    console.error("List documents error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Failed to list documents.",
+    });
+  }
 }

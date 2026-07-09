@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { UploadedDocumentModel } from "../models/document.model";
 
 export type DocumentChunk = {
   id: string;
@@ -17,50 +16,48 @@ export type StoredDocument = {
   chunks: DocumentChunk[];
 };
 
-const DOCUMENT_DIR = path.resolve(process.cwd(), "storage", "documents");
-const DOCUMENT_STORE_FILE = path.join(DOCUMENT_DIR, "documents.json");
-
-function ensureDocumentDir() {
-  if (!fs.existsSync(DOCUMENT_DIR)) {
-    fs.mkdirSync(DOCUMENT_DIR, { recursive: true });
-  }
+function toClientDocument(document: any): StoredDocument {
+  return {
+    id: document.documentId || document._id.toString(),
+    fileName: document.fileName,
+    uploadedAt: document.uploadedAt,
+    totalChunks: document.totalChunks,
+    chunks: (document.chunks || []).map((chunk: any) => ({
+      id: chunk.id,
+      documentId: chunk.documentId,
+      fileName: chunk.fileName,
+      chunkIndex: chunk.chunkIndex,
+      text: chunk.text,
+    })),
+  };
 }
 
-function readStore(): StoredDocument[] {
-  ensureDocumentDir();
+export async function saveDocument(document: StoredDocument) {
+  const createdDocument = await UploadedDocumentModel.create({
+    documentId: document.id,
+    fileName: document.fileName,
+    uploadedAt: document.uploadedAt,
+    totalChunks: document.totalChunks,
+    chunks: document.chunks,
+  });
 
-  if (!fs.existsSync(DOCUMENT_STORE_FILE)) {
-    return [];
-  }
-
-  try {
-    const raw = fs.readFileSync(DOCUMENT_STORE_FILE, "utf-8");
-    return JSON.parse(raw) as StoredDocument[];
-  } catch {
-    return [];
-  }
+  return toClientDocument(createdDocument.toObject());
 }
 
-function writeStore(documents: StoredDocument[]) {
-  ensureDocumentDir();
-  fs.writeFileSync(DOCUMENT_STORE_FILE, JSON.stringify(documents, null, 2), "utf-8");
+export async function getAllDocuments() {
+  const documents = await UploadedDocumentModel.find()
+    .sort({ uploadedAt: -1 })
+    .lean();
+
+  return documents.map(toClientDocument);
 }
 
-export function saveDocument(document: StoredDocument) {
-  const documents = readStore();
-  documents.push(document);
-  writeStore(documents);
-  return document;
+export async function getAllChunks() {
+  const documents = await getAllDocuments();
+
+  return documents.flatMap((document) => document.chunks);
 }
 
-export function getAllDocuments() {
-  return readStore();
-}
-
-export function getAllChunks() {
-  return readStore().flatMap((document) => document.chunks);
-}
-
-export function clearDocuments() {
-  writeStore([]);
+export async function clearDocuments() {
+  await UploadedDocumentModel.deleteMany({});
 }
