@@ -9,3 +9,5 @@ node_modules/
 backend/uploads/
 backend/storage/documents/
 frontend/.env.local
+
+
