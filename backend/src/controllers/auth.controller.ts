@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { google } from "googleapis";
 import { env } from "../config/env";
 import { googleOAuthClient, googleScopes } from "../config/google";
+import { upsertGoogleUser } from "../database/userStore";
 import {
   clearGoogleSession,
   getGoogleUser,
@@ -49,10 +50,19 @@ export async function googleCallbackController(req: Request, res: Response) {
 
     const userInfo = await oauth2.userinfo.get();
 
-    saveGoogleSession(tokens, {
+    const googleUser = {
+      id: userInfo.data.id || "",
       email: userInfo.data.email || "",
       name: userInfo.data.name || "",
       picture: userInfo.data.picture || "",
+    };
+
+    await upsertGoogleUser(googleUser);
+
+    saveGoogleSession(tokens, {
+      email: googleUser.email,
+      name: googleUser.name,
+      picture: googleUser.picture,
     });
 
     return res.redirect(`${env.FRONTEND_URL}?gmail=connected`);
