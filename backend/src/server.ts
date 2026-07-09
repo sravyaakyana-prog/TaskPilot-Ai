@@ -6,6 +6,7 @@ import { env } from "./config/env";
 import chatRoutes from "./routes/chat.routes";
 import authRoutes from "./routes/auth.routes";
 import documentRoutes from "./routes/document.routes";
+import { connectDatabase } from "./config/db";
 
 const app = express();
 
@@ -32,6 +33,12 @@ app.use("/api/auth", authRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/history", historyRoutes);
 
-app.listen(Number(env.PORT), () => {
-  console.log(`TaskPilot AI backend running on port ${env.PORT}`);
-});
+async function startServer() {
+  await connectDatabase();
+
+  app.listen(env.PORT, () => {
+    console.log(`TaskPilot AI backend running on port ${env.PORT}`);
+  });
+}
+
+startServer();

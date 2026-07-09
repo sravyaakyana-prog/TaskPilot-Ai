@@ -15,6 +15,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
     "googleapis": "^173.0.0",
+    "mongoose": "^9.7.4",
     "multer": "^2.2.0",
     "openai": "^4.104.0",
     "pdf-parse": "^2.4.5",

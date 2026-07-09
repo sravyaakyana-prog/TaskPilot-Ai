@@ -18,4 +18,6 @@ export const env = {
   ).trim(),
 
   FRONTEND_URL: (process.env.FRONTEND_URL || "http://localhost:3000").trim(),
+
+  MONGODB_URI: (process.env.MONGODB_URI || "").trim(),
 };

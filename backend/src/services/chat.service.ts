@@ -12,7 +12,10 @@ export async function generateChatReply(
   message: string,
   conversationId?: string
 ) {
-  const conversationContext = getRecentConversationContext(conversationId, 8);
+  const conversationContext = await getRecentConversationContext(
+    conversationId,
+    8
+  );
 
   const plan = createAgentPlan(message);
   const toolResult = await executeTool(plan, message);
@@ -62,7 +65,7 @@ Answer naturally and helpfully.
     steps: plan.steps,
   };
 
-  const conversation = saveChatExchange({
+  const conversation = await saveChatExchange({
     conversationId,
     userMessage: message,
     assistantMessage: reply,
