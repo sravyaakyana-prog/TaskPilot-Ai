@@ -175,3 +175,25 @@ export function saveChatExchange(params: {
 export function clearChatHistory() {
   writeStore([]);
 }
+export function getRecentConversationContext(
+  conversationId: string | undefined,
+  limit = 8
+) {
+  if (!conversationId) {
+    return "";
+  }
+
+  const conversation = getConversationById(conversationId);
+
+  if (!conversation) {
+    return "";
+  }
+
+  return conversation.messages
+    .slice(-limit)
+    .map((message) => {
+      const roleLabel = message.role === "user" ? "User" : "Assistant";
+      return `${roleLabel}: ${message.content}`;
+    })
+    .join("\n");
+}

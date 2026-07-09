@@ -1,5 +1,8 @@
 import { createAgentPlan } from "../agents/planner";
-import { saveChatExchange } from "../database/chatStore";
+import {
+  getRecentConversationContext,
+  saveChatExchange,
+} from "../database/chatStore";
 import { createLLMProvider } from "../llm";
 import { executeTool } from "../router/toolRouter";
 
@@ -9,6 +12,8 @@ export async function generateChatReply(
   message: string,
   conversationId?: string
 ) {
+  const conversationContext = getRecentConversationContext(conversationId, 8);
+
   const plan = createAgentPlan(message);
   const toolResult = await executeTool(plan, message);
 
@@ -16,6 +21,9 @@ export async function generateChatReply(
 You are TaskPilot AI.
 
 You are an intelligent productivity agent.
+
+Conversation Context:
+${conversationContext || "No previous context available."}
 
 Current Intent:
 ${plan.intent.intent}
@@ -31,6 +39,12 @@ ${plan.toolName ?? "None"}
 
 Tool Result:
 ${toolResult ?? "No tool executed"}
+
+Rules:
+- Use Conversation Context when the user refers to previous messages.
+- Use Tool Result when a tool was executed.
+- If there is no relevant context, answer normally.
+- Do not invent details that are not present in the context or tool result.
 
 Answer naturally and helpfully.
 `;
