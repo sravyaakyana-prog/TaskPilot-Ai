@@ -1,193 +1,221 @@
-import mongoose from "mongoose";
 import { ChatConversationModel } from "../models/chat.model";
+import { GUEST_USER_EMAIL } from "../utils/currentUser";
 
-export type StoredAgentTrace = {
-  intent: string;
-  confidence: number;
-  tool: string | null;
-  toolRequired: boolean;
-  steps: string[];
-};
+export type ChatRole = "user" | "assistant";
 
-export type StoredChatMessage = {
-  id: string;
-  role: "user" | "assistant";
+export type ChatMessage = {
+  role: ChatRole;
   content: string;
-  createdAt: string;
-  agent?: StoredAgentTrace;
+  agent?: any;
+  createdAt?: string;
 };
 
 export type ChatConversation = {
   id: string;
+  userEmail: string;
   title: string;
+  messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
-  messages: StoredChatMessage[];
+  messageCount: number;
+  lastMessage: ChatMessage | null;
 };
 
 function generateId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createTitleFromMessage(message: string) {
+function createTitle(message: string) {
   const cleaned = message.replace(/\s+/g, " ").trim();
 
   if (!cleaned) {
-    return "New Conversation";
+    return "New Chat";
   }
 
-  return cleaned.length > 45 ? `${cleaned.slice(0, 45)}...` : cleaned;
+  return cleaned.length > 42 ? `${cleaned.slice(0, 42)}...` : cleaned;
 }
 
-function toClientConversation(conversation: any): ChatConversation {
+function normalizeConversation(conversation: any): ChatConversation {
+  const messages = (conversation.messages || []).map((message: any) => ({
+    role: message.role,
+    content: message.content,
+    agent: message.agent || null,
+    createdAt: message.createdAt
+      ? new Date(message.createdAt).toISOString()
+      : new Date().toISOString(),
+  }));
+
   return {
-    id: conversation._id.toString(),
-    title: conversation.title,
-    createdAt: conversation.createdAt,
-    updatedAt: conversation.updatedAt,
-    messages: (conversation.messages || []).map((message: any) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt,
-      agent: message.agent,
-    })),
+    id: conversation.id,
+    userEmail: conversation.userEmail || GUEST_USER_EMAIL,
+    title: conversation.title || "New Chat",
+    messages,
+    createdAt: conversation.createdAt
+      ? new Date(conversation.createdAt).toISOString()
+      : new Date().toISOString(),
+    updatedAt: conversation.updatedAt
+      ? new Date(conversation.updatedAt).toISOString()
+      : new Date().toISOString(),
+    messageCount: messages.length,
+    lastMessage: messages.length > 0 ? messages[messages.length - 1] : null,
   };
 }
 
-function isValidMongoId(id?: string) {
-  return Boolean(id && mongoose.Types.ObjectId.isValid(id));
+function userFilter(userEmail: string) {
+  return {
+    $or: [
+      { userEmail },
+      {
+        userEmail: {
+          $exists: false,
+        },
+      },
+    ],
+  };
 }
 
-export async function getAllConversations() {
-  const conversations = await ChatConversationModel.find()
-    .sort({ updatedAt: -1 })
-    .lean();
-
-  return conversations.map(toClientConversation);
-}
-
-export async function getConversationSummaries() {
-  const conversations = await ChatConversationModel.find()
-    .sort({ updatedAt: -1 })
-    .lean();
-
-  return conversations.map((conversation: any) => {
-    const messages = conversation.messages || [];
-    const lastMessage = messages[messages.length - 1] || null;
-
-    return {
-      id: conversation._id.toString(),
-      title: conversation.title,
-      createdAt: conversation.createdAt,
-      updatedAt: conversation.updatedAt,
-      messageCount: messages.length,
-      lastMessage: lastMessage
-        ? {
-            role: lastMessage.role,
-            content: lastMessage.content.slice(0, 120),
-            createdAt: lastMessage.createdAt,
-          }
-        : null,
-    };
-  });
-}
-
-export async function getConversationById(conversationId: string) {
-  if (!isValidMongoId(conversationId)) {
-    return null;
-  }
-
-  const conversation = await ChatConversationModel.findById(conversationId).lean();
-
-  if (!conversation) {
-    return null;
-  }
-
-  return toClientConversation(conversation);
-}
-
-export async function createConversation(title?: string) {
-  const now = new Date().toISOString();
+export async function createConversation(
+  userEmail: string,
+  firstUserMessage: string,
+  messages: ChatMessage[] = []
+) {
+  const now = new Date();
 
   const conversation = await ChatConversationModel.create({
-    title: title || "New Conversation",
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
+    id: generateId("chat"),
+    userEmail: userEmail || GUEST_USER_EMAIL,
+    title: createTitle(firstUserMessage),
+    messages: messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      agent: message.agent || null,
+      createdAt: message.createdAt ? new Date(message.createdAt) : now,
+    })),
   });
 
-  return toClientConversation(conversation.toObject());
+  return normalizeConversation(conversation);
 }
 
-export async function saveChatExchange(params: {
-  conversationId?: string;
+export async function appendMessagesToConversation(
+  userEmail: string,
+  conversationId: string,
+  messages: ChatMessage[]
+) {
+  const formattedMessages = messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    agent: message.agent || null,
+    createdAt: message.createdAt ? new Date(message.createdAt) : new Date(),
+  }));
+
+  const conversation = await ChatConversationModel.findOneAndUpdate(
+    {
+      id: conversationId,
+      ...userFilter(userEmail || GUEST_USER_EMAIL),
+    },
+    {
+      $push: {
+        messages: {
+          $each: formattedMessages,
+        },
+      },
+      $set: {
+        userEmail: userEmail || GUEST_USER_EMAIL,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+
+  if (!conversation) {
+    return null;
+  }
+
+  return normalizeConversation(conversation);
+}
+
+export async function saveChatTurn(params: {
+  userEmail: string;
+  conversationId?: string | null;
   userMessage: string;
   assistantMessage: string;
-  agent?: StoredAgentTrace;
+  agent?: any;
 }) {
-  const now = new Date().toISOString();
+  const userEmail = params.userEmail || GUEST_USER_EMAIL;
 
-  let conversation = null;
+  const messages: ChatMessage[] = [
+    {
+      role: "user",
+      content: params.userMessage,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      role: "assistant",
+      content: params.assistantMessage,
+      agent: params.agent || null,
+      createdAt: new Date().toISOString(),
+    },
+  ];
 
-  if (isValidMongoId(params.conversationId)) {
-    conversation = await ChatConversationModel.findById(params.conversationId);
+  if (!params.conversationId) {
+    return createConversation(userEmail, params.userMessage, messages);
   }
 
-  if (!conversation) {
-    conversation = new ChatConversationModel({
-      title: createTitleFromMessage(params.userMessage),
-      createdAt: now,
-      updatedAt: now,
-      messages: [],
-    });
+  const existingConversation = await appendMessagesToConversation(
+    userEmail,
+    params.conversationId,
+    messages
+  );
+
+  if (existingConversation) {
+    return existingConversation;
   }
 
-  conversation.messages.push({
-    id: generateId("msg"),
-    role: "user",
-    content: params.userMessage,
-    createdAt: now,
-  });
-
-  conversation.messages.push({
-    id: generateId("msg"),
-    role: "assistant",
-    content: params.assistantMessage,
-    createdAt: now,
-    agent: params.agent,
-  });
-
-  conversation.updatedAt = now;
-
-  await conversation.save();
-
-  return toClientConversation(conversation.toObject());
+  return createConversation(userEmail, params.userMessage, messages);
 }
 
-export async function getRecentConversationContext(
-  conversationId: string | undefined,
-  limit = 8
+export async function getConversations(userEmail: string) {
+  const conversations = await ChatConversationModel.find(
+    userFilter(userEmail || GUEST_USER_EMAIL)
+  )
+    .sort({ updatedAt: -1 })
+    .limit(50)
+    .lean();
+
+  return conversations.map(normalizeConversation);
+}
+
+export async function getConversationById(
+  userEmail: string,
+  conversationId: string
 ) {
-  if (!conversationId || !isValidMongoId(conversationId)) {
-    return "";
-  }
-
-  const conversation = await getConversationById(conversationId);
+  const conversation = await ChatConversationModel.findOne({
+    id: conversationId,
+    ...userFilter(userEmail || GUEST_USER_EMAIL),
+  }).lean();
 
   if (!conversation) {
-    return "";
+    return null;
   }
 
-  return conversation.messages
-    .slice(-limit)
-    .map((message) => {
-      const roleLabel = message.role === "user" ? "User" : "Assistant";
-      return `${roleLabel}: ${message.content}`;
-    })
-    .join("\n");
+  return normalizeConversation(conversation);
 }
 
-export async function clearChatHistory() {
-  await ChatConversationModel.deleteMany({});
+export async function clearConversations(userEmail: string) {
+  await ChatConversationModel.deleteMany(
+    userFilter(userEmail || GUEST_USER_EMAIL)
+  );
+
+  return {
+    success: true,
+  };
+}
+
+export async function getAllConversations(userEmail = GUEST_USER_EMAIL) {
+  return getConversations(userEmail);
+}
+
+export async function clearAllConversations(userEmail = GUEST_USER_EMAIL) {
+  return clearConversations(userEmail);
 }
