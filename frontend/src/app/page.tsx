@@ -49,6 +49,9 @@ type Message = {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+const MAX_DOCUMENT_SIZE_MB = 12;
+const MAX_DOCUMENT_SIZE_BYTES = MAX_DOCUMENT_SIZE_MB * 1024 * 1024;
+
 const quickActions = [
   {
     icon: "📩",
@@ -104,6 +107,26 @@ function getInitials(name?: string, email?: string) {
 function getFirstName(name?: string) {
   if (!name) return "there";
   return name.split(" ")[0];
+}
+
+function validateDocumentFile(file: File) {
+  const fileName = file.name.toLowerCase();
+  const isPdf = fileName.endsWith(".pdf");
+  const isTxt = fileName.endsWith(".txt");
+
+  if (!isPdf && !isTxt) {
+    return "Unsupported file type. Please upload only a PDF or TXT file.";
+  }
+
+  if (file.size === 0) {
+    return "The uploaded file is empty. Please upload a readable PDF or TXT file.";
+  }
+
+  if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+    return `File is too large. Please upload a PDF or TXT file under ${MAX_DOCUMENT_SIZE_MB}MB.`;
+  }
+
+  return null;
 }
 
 export default function Home() {
@@ -263,6 +286,23 @@ export default function Home() {
   const uploadDocument = async () => {
     if (!selectedFile || uploadingDocument) return;
 
+    const validationError = validateDocumentFile(selectedFile);
+
+    if (validationError) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `⚠️ Document upload failed.
+
+${validationError}`,
+          time: timeNow(),
+        },
+      ]);
+
+      return;
+    }
+
     setUploadingDocument(true);
 
     const formData = new FormData();
@@ -274,7 +314,10 @@ export default function Home() {
         body: formData,
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: "Server returned an invalid response. Please try again.",
+      }));
 
       setMessages((prev) => [
         ...prev,
@@ -287,19 +330,24 @@ File: ${data.document.fileName}
 Chunks: ${data.document.totalChunks}
 
 You can now ask questions about this document.`
-            : data.error || "Failed to upload document.",
+            : `⚠️ Document upload failed.
+
+${data.error || "Please upload a readable PDF or TXT file."}`,
           time: timeNow(),
         },
       ]);
 
-      setSelectedFile(null);
-      await fetchDocuments();
+      if (data.success) {
+        setSelectedFile(null);
+        await fetchDocuments();
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Document upload failed. Make sure backend is running.",
+          content:
+            "⚠️ Document upload failed. Please check that the backend is running and try again.",
           time: timeNow(),
         },
       ]);
@@ -309,6 +357,25 @@ You can now ask questions about this document.`
   };
 
   const uploadComposerDocument = async (file: File) => {
+    if (uploadingDocument) return;
+
+    const validationError = validateDocumentFile(file);
+
+    if (validationError) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `⚠️ Document upload failed.
+
+${validationError}`,
+          time: timeNow(),
+        },
+      ]);
+
+      return;
+    }
+
     setUploadingDocument(true);
 
     const formData = new FormData();
@@ -320,7 +387,10 @@ You can now ask questions about this document.`
         body: formData,
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: "Server returned an invalid response. Please try again.",
+      }));
 
       setMessages((prev) => [
         ...prev,
@@ -333,18 +403,23 @@ File: ${data.document.fileName}
 Chunks: ${data.document.totalChunks}
 
 You can now ask questions about this document.`
-            : data.error || "Failed to upload document.",
+            : `⚠️ Document upload failed.
+
+${data.error || "Please upload a readable PDF or TXT file."}`,
           time: timeNow(),
         },
       ]);
 
-      await fetchDocuments();
+      if (data.success) {
+        await fetchDocuments();
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Document upload failed. Make sure backend is running.",
+          content:
+            "⚠️ Document upload failed. Please check that the backend is running and try again.",
           time: timeNow(),
         },
       ]);
@@ -394,7 +469,10 @@ You can now ask questions about this document.`
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: "Server returned an invalid response.",
+      }));
 
       if (data.agent) {
         setLatestAgent(data.agent);

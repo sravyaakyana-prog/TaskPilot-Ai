@@ -13,6 +13,18 @@ const pdfParse =
     ? pdfParsePackage
     : pdfParsePackage.default;
 
+const MIN_READABLE_TEXT_LENGTH = 20;
+
+export class DocumentProcessingError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode = 400) {
+    super(message);
+    this.name = "DocumentProcessingError";
+    this.statusCode = statusCode;
+  }
+}
+
 function generateId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -111,18 +123,69 @@ function createSmartChunks(
   return chunks;
 }
 
+function deleteTempFile(filePath?: string) {
+  if (!filePath) return;
+
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch {
+    // Ignore cleanup failure.
+  }
+}
+
 async function extractTextFromPdf(filePath: string) {
   try {
     if (!pdfParse) {
-      throw new Error("PDF parser is not available.");
+      throw new DocumentProcessingError(
+        "PDF parser is not available. Please upload a TXT file or try another PDF."
+      );
     }
 
     const buffer = fs.readFileSync(filePath);
-    const data = await pdfParse(buffer);
 
-    return data.text || "";
-  } catch {
-    throw new Error(
+    if (!buffer || buffer.length === 0) {
+      throw new DocumentProcessingError(
+        "The uploaded PDF appears to be empty."
+      );
+    }
+
+    const data = await pdfParse(buffer);
+    const extractedText = cleanText(data.text || "");
+
+    if (!extractedText || extractedText.length < MIN_READABLE_TEXT_LENGTH) {
+      throw new DocumentProcessingError(
+        "No readable text found in this PDF. It may be scanned/image-based. Please upload a text-based PDF or TXT file."
+      );
+    }
+
+    return extractedText;
+  } catch (error: any) {
+    if (error instanceof DocumentProcessingError) {
+      throw error;
+    }
+
+    const message = String(error?.message || "").toLowerCase();
+
+    if (message.includes("password") || message.includes("encrypted")) {
+      throw new DocumentProcessingError(
+        "This PDF appears to be password-protected or encrypted. Please upload an unlocked PDF."
+      );
+    }
+
+    if (
+      message.includes("invalid") ||
+      message.includes("corrupt") ||
+      message.includes("bad xref") ||
+      message.includes("format")
+    ) {
+      throw new DocumentProcessingError(
+        "This PDF could not be read. It may be corrupted. Please upload another PDF or TXT file."
+      );
+    }
+
+    throw new DocumentProcessingError(
       "Could not read this PDF. Please upload a text-based PDF or TXT file."
     );
   }
@@ -130,66 +193,111 @@ async function extractTextFromPdf(filePath: string) {
 
 function extractTextFromTxt(filePath: string) {
   try {
-    return fs.readFileSync(filePath, "utf-8");
-  } catch {
-    throw new Error("Could not read this TXT file.");
+    const text = fs.readFileSync(filePath, "utf-8");
+    const cleaned = cleanText(text);
+
+    if (!cleaned || cleaned.length < MIN_READABLE_TEXT_LENGTH) {
+      throw new DocumentProcessingError(
+        "No readable text found in this TXT file."
+      );
+    }
+
+    return cleaned;
+  } catch (error: any) {
+    if (error instanceof DocumentProcessingError) {
+      throw error;
+    }
+
+    throw new DocumentProcessingError("Could not read this TXT file.");
   }
+}
+
+function validateUploadedFile(file: Express.Multer.File) {
+  if (!file) {
+    throw new DocumentProcessingError("No file uploaded.");
+  }
+
+  if (!fs.existsSync(file.path)) {
+    throw new DocumentProcessingError(
+      "Uploaded file was not found on the server."
+    );
+  }
+
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  if (![".pdf", ".txt"].includes(ext)) {
+    throw new DocumentProcessingError(
+      "Unsupported file type. Please upload only a PDF or TXT file."
+    );
+  }
+
+  if (file.size === 0) {
+    throw new DocumentProcessingError("The uploaded file is empty.");
+  }
+
+  if (file.size > 12 * 1024 * 1024) {
+    throw new DocumentProcessingError(
+      "File is too large. Please upload a PDF or TXT file under 12MB."
+    );
+  }
+
+  return ext;
 }
 
 export async function processUploadedDocument(
   file: Express.Multer.File,
   userEmail: string
 ) {
-  if (!file) {
-    throw new Error("No file uploaded.");
-  }
+  try {
+    const ext = validateUploadedFile(file);
 
-  if (!fs.existsSync(file.path)) {
-    throw new Error("Uploaded file was not found on the server.");
-  }
+    let extractedText = "";
 
-  const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === ".pdf") {
+      extractedText = await extractTextFromPdf(file.path);
+    } else if (ext === ".txt") {
+      extractedText = extractTextFromTxt(file.path);
+    }
 
-  let extractedText = "";
+    const cleanedText = cleanText(extractedText);
 
-  if (ext === ".pdf") {
-    extractedText = await extractTextFromPdf(file.path);
-  } else if (ext === ".txt") {
-    extractedText = extractTextFromTxt(file.path);
-  } else {
-    throw new Error("Unsupported file type. Please upload a PDF or TXT file.");
-  }
+    if (!cleanedText || cleanedText.length < MIN_READABLE_TEXT_LENGTH) {
+      throw new DocumentProcessingError(
+        "No readable text found in this document. Please upload a text-based PDF or TXT file."
+      );
+    }
 
-  const cleanedText = cleanText(extractedText);
-
-  if (!cleanedText || cleanedText.length < 20) {
-    throw new Error(
-      "No readable text found in this document. Please upload a text-based PDF or TXT file."
+    const documentId = generateId("doc");
+    const chunks = createSmartChunks(
+      cleanedText,
+      documentId,
+      file.originalname
     );
+
+    if (chunks.length === 0) {
+      throw new DocumentProcessingError(
+        "Could not create searchable chunks from this document."
+      );
+    }
+
+    const document: StoredDocument = {
+      id: documentId,
+      userEmail,
+      fileName: file.originalname,
+      uploadedAt: new Date().toISOString(),
+      totalChunks: chunks.length,
+      chunks,
+    };
+
+    await saveDocument(document, userEmail);
+
+    return {
+      id: document.id,
+      fileName: document.fileName,
+      totalChunks: document.totalChunks,
+      uploadedAt: document.uploadedAt,
+    };
+  } finally {
+    deleteTempFile(file?.path);
   }
-
-  const documentId = generateId("doc");
-  const chunks = createSmartChunks(cleanedText, documentId, file.originalname);
-
-  if (chunks.length === 0) {
-    throw new Error("Could not create searchable chunks from this document.");
-  }
-
-  const document: StoredDocument = {
-    id: documentId,
-    userEmail,
-    fileName: file.originalname,
-    uploadedAt: new Date().toISOString(),
-    totalChunks: chunks.length,
-    chunks,
-  };
-
-  await saveDocument(document, userEmail);
-
-  return {
-    id: document.id,
-    fileName: document.fileName,
-    totalChunks: document.totalChunks,
-    uploadedAt: document.uploadedAt,
-  };
 }
