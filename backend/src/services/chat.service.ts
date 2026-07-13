@@ -1,6 +1,7 @@
 import { saveChatTurn } from "../database/chatStore";
 import { classifyIntent } from "../intents/classifier";
 import { searchDocumentTool } from "../tools/document/document.search";
+import { generateAIResponse } from "./llm.service";
 import { getCurrentUserEmail } from "../utils/currentUser";
 
 type AgentTrace = {
@@ -47,36 +48,10 @@ function createAgentTrace(
     steps: [
       "Classified user intent",
       tool ? `Selected tool: ${tool}` : "No external tool required",
-      tool ? "Executed tool" : "Generated direct response",
+      tool ? "Executed tool" : "Generated response with LLM provider",
       "Prepared final response",
     ],
   };
-}
-
-function fallbackReply(message: string) {
-  const text = message.toLowerCase();
-
-  if (
-    text.includes("hello") ||
-    text.includes("hi") ||
-    text.includes("hey")
-  ) {
-    return "Hi! I am TaskPilot AI. I can help with Gmail, Calendar, uploaded documents, and productivity planning.";
-  }
-
-  if (text.includes("what can you do") || text.includes("help")) {
-    return `I can help you with:
-
-1. Summarizing unread Gmail messages
-2. Searching Gmail emails
-3. Creating Gmail drafts
-4. Checking your Google Calendar
-5. Creating calendar events
-6. Uploading and summarizing PDF/TXT documents
-7. Saving chat history and continuing previous conversations`;
-  }
-
-  return "I understood your message. You can ask me to summarize Gmail, search emails, check your calendar, create drafts, or summarize uploaded documents.";
 }
 
 async function loadToolFunction(
@@ -246,11 +221,12 @@ function formatToolResult(tool: string, result: any) {
 
   if (tool === "document.search") {
     if (result.answer) {
-      return `📄 Document answer:
+      return `📄 Document Answer
 
 ${result.answer}
 
-Source: ${result.results?.[0]?.fileName || "Uploaded document"}`;
+Source:
+${result.results?.[0]?.fileName || "Uploaded document"}`;
     }
 
     return result.message || "No document answer found.";
@@ -326,7 +302,21 @@ export async function handleChatMessage(
     const toolResult = await runExternalTool(tool, message);
     reply = formatToolResult(tool, toolResult);
   } else {
-    reply = fallbackReply(message);
+    const llmResult = await generateAIResponse({
+      message,
+      intent: classification.intent,
+      userEmail,
+    });
+
+    reply = llmResult.text;
+
+    agent.steps.splice(
+      3,
+      0,
+      llmResult.usedFallback
+        ? `LLM provider fallback used: ${llmResult.provider}`
+        : `LLM provider used: ${llmResult.provider}`
+    );
   }
 
   const savedConversation = await saveChatTurn({

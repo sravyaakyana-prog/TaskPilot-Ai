@@ -583,7 +583,7 @@ You can now ask questions about this document.`
               </span>
 
               <span className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm text-slate-300">
-                Mock Provider
+                Gemini + Fallback
               </span>
             </div>
           </header>
@@ -623,7 +623,7 @@ You can now ask questions about this document.`
               </span>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6 pb-28">
               {messages.map((msg, index) => (
                 <div
                   key={index}
