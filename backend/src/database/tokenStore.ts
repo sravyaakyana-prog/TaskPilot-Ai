@@ -1,105 +1,170 @@
-import fs from "fs";
-import path from "path";
-import { Credentials } from "google-auth-library";
+import { GoogleTokenSessionModel } from "../models/googleToken.model";
 
-type GoogleUser = {
+export type GoogleUser = {
   email: string;
   name?: string;
   picture?: string;
 };
 
-type StoredGoogleSession = {
-  tokens: Credentials;
+export type GoogleSession = {
   user: GoogleUser;
+  tokens: any;
+  connected: boolean;
+  updatedAt?: string;
 };
 
-const STORAGE_DIR = path.resolve(process.cwd(), "storage");
-const TOKEN_FILE = path.join(STORAGE_DIR, "google-session.json");
+const ACTIVE_SESSION_KEY = "active-google-session";
 
-let googleTokens: Credentials | null = null;
-let googleUser: GoogleUser | null = null;
+let activeSession: GoogleSession | null = null;
 
-function ensureStorageDir() {
-  if (!fs.existsSync(STORAGE_DIR)) {
-    fs.mkdirSync(STORAGE_DIR, { recursive: true });
-  }
-}
-
-function loadGoogleSessionFromFile() {
+export async function initializeGoogleSession() {
   try {
-    if (!fs.existsSync(TOKEN_FILE)) return;
+    const session = await GoogleTokenSessionModel.findOne({
+      key: ACTIVE_SESSION_KEY,
+      connected: true,
+    }).lean();
 
-    const rawData = fs.readFileSync(TOKEN_FILE, "utf-8");
-    const session = JSON.parse(rawData) as StoredGoogleSession;
+    if (!session) {
+      activeSession = null;
+      console.log("Google session: not connected");
+      return null;
+    }
 
-    googleTokens = session.tokens;
-    googleUser = session.user;
-  } catch (error) {
-    console.error("Failed to load Google session:", error);
-    googleTokens = null;
-    googleUser = null;
-  }
-}
-
-function saveGoogleSessionToFile(tokens: Credentials, user: GoogleUser) {
-  try {
-    ensureStorageDir();
-
-    const session: StoredGoogleSession = {
-      tokens,
-      user,
+    activeSession = {
+      user: {
+        email: session.user?.email || session.userEmail,
+        name: session.user?.name || "",
+        picture: session.user?.picture || "",
+      },
+      tokens: session.tokens,
+      connected: Boolean(session.connected),
+      updatedAt: session.updatedAt
+        ? new Date(session.updatedAt).toISOString()
+        : new Date().toISOString(),
     };
 
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify(session, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Failed to save Google session:", error);
+    console.log(`Google session loaded for: ${activeSession.user.email}`);
+
+    return activeSession;
+  } catch (error: any) {
+    console.error("Failed to initialize Google session:", error.message);
+    activeSession = null;
+    return null;
   }
 }
 
-function deleteGoogleSessionFile() {
-  try {
-    if (fs.existsSync(TOKEN_FILE)) {
-      fs.unlinkSync(TOKEN_FILE);
+export async function saveGoogleSession(tokens: any, user: GoogleUser) {
+  const mergedTokens = {
+    ...(activeSession?.tokens || {}),
+    ...(tokens || {}),
+  };
+
+  activeSession = {
+    user: {
+      email: user.email,
+      name: user.name || "",
+      picture: user.picture || "",
+    },
+    tokens: mergedTokens,
+    connected: true,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await GoogleTokenSessionModel.findOneAndUpdate(
+    {
+      key: ACTIVE_SESSION_KEY,
+    },
+    {
+      $set: {
+        key: ACTIVE_SESSION_KEY,
+        userEmail: user.email,
+        user: {
+          email: user.email,
+          name: user.name || "",
+          picture: user.picture || "",
+        },
+        tokens: mergedTokens,
+        connected: true,
+      },
+    },
+    {
+      upsert: true,
+      new: true,
     }
-  } catch (error) {
-    console.error("Failed to delete Google session:", error);
-  }
+  );
+
+  return activeSession;
 }
 
-loadGoogleSessionFromFile();
-
-export function saveGoogleSession(tokens: Credentials, user: GoogleUser) {
-  googleTokens = tokens;
-  googleUser = user;
-  saveGoogleSessionToFile(tokens, user);
+export function getGoogleSession() {
+  return activeSession;
 }
 
 export function getGoogleTokens() {
-  if (!googleTokens) {
-    loadGoogleSessionFromFile();
-  }
-
-  return googleTokens;
+  return activeSession?.tokens || null;
 }
 
 export function getGoogleUser() {
-  if (!googleUser) {
-    loadGoogleSessionFromFile();
-  }
-
-  return googleUser;
-}
-
-export function clearGoogleSession() {
-  googleTokens = null;
-  googleUser = null;
-  deleteGoogleSessionFile();
+  return activeSession?.user || null;
 }
 
 export function isGoogleConnected() {
-  if (!googleTokens) {
-    loadGoogleSessionFromFile();
+  const tokens = activeSession?.tokens;
+
+  return Boolean(
+    activeSession?.connected && (tokens?.access_token || tokens?.refresh_token)
+  );
+}
+
+export async function clearGoogleSession() {
+  activeSession = null;
+
+  await GoogleTokenSessionModel.findOneAndUpdate(
+    {
+      key: ACTIVE_SESSION_KEY,
+    },
+    {
+      $set: {
+        connected: false,
+      },
+    }
+  );
+
+  return {
+    success: true,
+  };
+}
+
+export async function refreshGoogleTokens(tokens: any) {
+  if (!activeSession) {
+    return null;
   }
 
-  return Boolean(googleTokens?.access_token || googleTokens?.refresh_token);
+  const mergedTokens = {
+    ...(activeSession.tokens || {}),
+    ...(tokens || {}),
+  };
+
+  activeSession = {
+    ...activeSession,
+    tokens: mergedTokens,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await GoogleTokenSessionModel.findOneAndUpdate(
+    {
+      key: ACTIVE_SESSION_KEY,
+    },
+    {
+      $set: {
+        tokens: mergedTokens,
+        connected: true,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+
+  return activeSession;
 }

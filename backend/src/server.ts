@@ -2,6 +2,7 @@ import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import { connectDatabase } from "./config/db";
 import { env } from "./config/env";
+import { initializeGoogleSession } from "./database/tokenStore";
 import authRoutes from "./routes/auth.routes";
 import chatRoutes from "./routes/chat.routes";
 import documentRoutes from "./routes/document.routes";
@@ -64,19 +65,18 @@ app.use((_req: Request, res: Response) => {
   });
 });
 
-app.use(
-  (error: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error("Server error:", error.message);
+app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Server error:", error.message);
 
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Internal server error.",
-    });
-  }
-);
+  return res.status(500).json({
+    success: false,
+    error: error.message || "Internal server error.",
+  });
+});
 
 async function startServer() {
   await connectDatabase();
+  await initializeGoogleSession();
 
   app.listen(env.PORT, () => {
     console.log("====================================");

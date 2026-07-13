@@ -11,22 +11,14 @@ import {
 } from "../database/tokenStore";
 
 export function googleLoginController(_req: Request, res: Response) {
-  try {
-    const authUrl = googleOAuthClient.generateAuthUrl({
-      access_type: "offline",
-      prompt: "consent",
-      scope: googleScopes,
-    });
+  const authUrl = googleOAuthClient.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: googleScopes,
+    include_granted_scopes: true,
+  });
 
-    return res.redirect(authUrl);
-  } catch (error: any) {
-    console.error("Google login error:", error);
-
-    return res.status(500).json({
-      success: false,
-      error: error.message || "Failed to start Google OAuth.",
-    });
-  }
+  return res.redirect(authUrl);
 }
 
 export async function googleCallbackController(req: Request, res: Response) {
@@ -41,6 +33,7 @@ export async function googleCallbackController(req: Request, res: Response) {
     }
 
     const { tokens } = await googleOAuthClient.getToken(code);
+
     googleOAuthClient.setCredentials(tokens);
 
     const oauth2 = google.oauth2({
@@ -57,19 +50,29 @@ export async function googleCallbackController(req: Request, res: Response) {
       picture: userInfo.data.picture || "",
     };
 
+    if (!googleUser.email) {
+      return res.status(400).json({
+        success: false,
+        error: "Could not read Google account email.",
+      });
+    }
+
     await upsertGoogleUser(googleUser);
 
-    saveGoogleSession(tokens, {
+    await saveGoogleSession(tokens, {
       email: googleUser.email,
       name: googleUser.name,
       picture: googleUser.picture,
     });
 
-    return res.redirect(`${env.FRONTEND_URL}?gmail=connected`);
+    return res.redirect(`${env.FRONTEND_URL}?google=connected`);
   } catch (error: any) {
-    console.error("Google callback error:", error);
+    console.error("Google OAuth callback failed:", error.message);
 
-    return res.redirect(`${env.FRONTEND_URL}?gmail=error`);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Google OAuth failed.",
+    });
   }
 }
 
@@ -78,14 +81,25 @@ export function googleStatusController(_req: Request, res: Response) {
     success: true,
     connected: isGoogleConnected(),
     user: getGoogleUser(),
+    storage: "mongodb",
   });
 }
 
-export function googleLogoutController(_req: Request, res: Response) {
-  clearGoogleSession();
+export async function googleLogoutController(_req: Request, res: Response) {
+  try {
+    await clearGoogleSession();
 
-  return res.json({
-    success: true,
-    message: "Google session cleared.",
-  });
+    return res.json({
+      success: true,
+      connected: false,
+      message: "Google account disconnected.",
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Failed to disconnect Google account.",
+    });
+  }
 }
+
+export const googleDisconnectController = googleLogoutController;
