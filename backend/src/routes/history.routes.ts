@@ -1,16 +1,14 @@
-import { Router } from "express";
+import express from "express";
 import {
   clearHistoryController,
-  createHistoryController,
   getConversationController,
-  listHistoryController,
+  getHistoryController,
 } from "../controllers/history.controller";
 
-const router = Router();
+const router = express.Router();
 
-router.get("/", listHistoryController);
-router.get("/:conversationId", getConversationController);
-router.post("/", createHistoryController);
+router.get("/", getHistoryController);
+router.get("/:id", getConversationController);
 router.delete("/", clearHistoryController);
 
 export default router;

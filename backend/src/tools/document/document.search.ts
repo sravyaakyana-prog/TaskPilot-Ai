@@ -1,8 +1,5 @@
-import {
-  DocumentChunk,
-  getAllChunks,
-  getAllDocuments,
-} from "../../database/documentStore";
+import { DocumentChunk, getAllChunks, getDocuments } from "../../database/documentStore";
+import { getCurrentUserEmail } from "../../utils/currentUser";
 
 const STOP_WORDS = new Set([
   "the",
@@ -32,6 +29,12 @@ const STOP_WORDS = new Set([
   "tell",
   "me",
   "about",
+  "summarize",
+  "summarise",
+  "summary",
+  "explain",
+  "file",
+  "pdf",
 ]);
 
 const SYNONYMS: Record<string, string[]> = {
@@ -41,6 +44,7 @@ const SYNONYMS: Record<string, string[]> = {
   meeting: ["calendar", "event", "schedule", "meetings"],
   document: ["rag", "pdf", "file", "documents"],
   project: ["taskpilot", "agent", "productivity"],
+  ai: ["agent", "assistant", "automation", "taskpilot"],
 };
 
 function cleanText(text: string) {
@@ -104,8 +108,25 @@ function scoreChunk(questionTokens: string[], chunk: DocumentChunk) {
   return baseScore + earlyChunkBoost;
 }
 
-async function getTopChunks(question: string, limit = 4) {
-  const chunks = await getAllChunks();
+function isSummaryQuery(question: string) {
+  const lowerQuestion = question.toLowerCase();
+
+  return (
+    lowerQuestion.includes("summarize") ||
+    lowerQuestion.includes("summarise") ||
+    lowerQuestion.includes("summary") ||
+    lowerQuestion.includes("what is this document about") ||
+    lowerQuestion.includes("what is the document about") ||
+    lowerQuestion.includes("what is it about") ||
+    lowerQuestion.includes("what does this document say") ||
+    lowerQuestion.includes("what does it say") ||
+    lowerQuestion.includes("explain this document") ||
+    lowerQuestion.includes("explain it")
+  );
+}
+
+async function getTopChunks(question: string, userEmail: string, limit = 4) {
+  const chunks = await getAllChunks(userEmail);
   const rawTokens = tokenize(question);
   const questionTokens = expandTokens(rawTokens);
 
@@ -128,7 +149,11 @@ async function getTopChunks(question: string, limit = 4) {
     .map((item) => item.chunk);
 }
 
-function getRelevantSentences(question: string, chunks: DocumentChunk[], limit = 5) {
+function getRelevantSentences(
+  question: string,
+  chunks: DocumentChunk[],
+  limit = 5
+) {
   const rawTokens = tokenize(question);
   const questionTokens = expandTokens(rawTokens);
 
@@ -158,8 +183,8 @@ function getRelevantSentences(question: string, chunks: DocumentChunk[], limit =
   return rankedSentences;
 }
 
-async function summarizeLatestDocument() {
-  const documents = await getAllDocuments();
+async function summarizeLatestDocument(userEmail: string) {
+  const documents = await getDocuments(userEmail);
 
   if (documents.length === 0) {
     return null;
@@ -171,15 +196,17 @@ async function summarizeLatestDocument() {
   const context = cleanText(firstChunks.map((chunk) => chunk.text).join(" "));
   const sentences = splitIntoSentences(context);
 
-  const summarySentences = sentences.slice(0, 5);
+  const summarySentences = sentences.slice(0, 6);
 
   return {
+    documentId: latestDocument.id,
     fileName: latestDocument.fileName,
     totalChunks: latestDocument.totalChunks,
     summaryText:
       summarySentences.length > 0
         ? summarySentences.join(" ")
         : context.slice(0, 1200),
+    chunks: firstChunks,
   };
 }
 
@@ -199,13 +226,8 @@ function buildAnswer(question: string, chunks: DocumentChunk[]) {
     ).values()
   );
 
-  return `📄 Document Answer
-
-Question:
-${question}
-
-Answer:
-Based on the uploaded document, I found these relevant points:
+  return {
+    answer: `Based on the uploaded document, I found these relevant points:
 
 ${answerText}
 
@@ -215,43 +237,51 @@ ${uniqueSources
   .join("\n")}
 
 RAG Mode:
-MongoDB document chunks + local sentence ranking.
-
-Note:
-This answer is grounded in uploaded document chunks.`;
+MongoDB document chunks + local sentence ranking.`,
+    results: uniqueSources.map((chunk, index) => ({
+      documentId: chunk.documentId,
+      fileName: chunk.fileName,
+      chunkIndex: chunk.chunkIndex,
+      text: chunk.text,
+      score: uniqueSources.length - index,
+    })),
+  };
 }
 
-export async function searchDocuments(question: string): Promise<string> {
-  const documents = await getAllDocuments();
+export async function searchDocumentTool(question: string) {
+  const userEmail = getCurrentUserEmail();
+  const documents = await getDocuments(userEmail);
 
   if (documents.length === 0) {
-    return `📄 Document Q&A
-
-No documents are uploaded yet.
-
-Upload a PDF or TXT file first, then ask a question about it.`;
+    return {
+      success: true,
+      userEmail,
+      message:
+        "No documents are uploaded yet. Upload a PDF or TXT file first, then ask a question about it.",
+      answer:
+        "No uploaded documents found. Please upload a PDF or TXT file first.",
+      results: [],
+    };
   }
 
-  const lowerQuestion = question.toLowerCase();
-
-  const wantsSummary =
-    lowerQuestion.includes("summarize") ||
-    lowerQuestion.includes("summary") ||
-    lowerQuestion.includes("what is this document about") ||
-    lowerQuestion.includes("what is the document about");
-
-  if (wantsSummary) {
-    const summary = await summarizeLatestDocument();
+  if (isSummaryQuery(question)) {
+    const summary = await summarizeLatestDocument(userEmail);
 
     if (!summary) {
-      return `📄 Document Q&A
-
-No readable document content found.`;
+      return {
+        success: true,
+        userEmail,
+        message: "No readable document content found.",
+        answer: "No readable document content found.",
+        results: [],
+      };
     }
 
-    return `📄 Document Summary
-
-File:
+    return {
+      success: true,
+      userEmail,
+      message: "Document summary generated successfully.",
+      answer: `File:
 ${summary.fileName}
 
 Total Chunks:
@@ -264,15 +294,25 @@ Sources:
 - ${summary.fileName}
 
 RAG Mode:
-MongoDB latest document summary.`;
+MongoDB latest document summary.`,
+      results: summary.chunks.map((chunk, index) => ({
+        documentId: summary.documentId,
+        fileName: summary.fileName,
+        chunkIndex: chunk.chunkIndex,
+        text: chunk.text,
+        score: summary.chunks.length - index,
+      })),
+    };
   }
 
-  const topChunks = await getTopChunks(question);
+  const topChunks = await getTopChunks(question, userEmail);
 
   if (topChunks.length === 0) {
-    return `📄 Document Answer
-
-I could not find a strong match in the uploaded documents for:
+    return {
+      success: true,
+      userEmail,
+      message: "No strong matching content found.",
+      answer: `I could not find a strong match in your uploaded documents for:
 
 ${question}
 
@@ -281,8 +321,38 @@ Try asking with keywords that appear in the document.
 Available Documents:
 ${documents
   .map((document) => `- ${document.fileName} (${document.totalChunks} chunks)`)
-  .join("\n")}`;
+  .join("\n")}`,
+      results: [],
+    };
   }
 
-  return buildAnswer(question, topChunks);
+  const builtAnswer = buildAnswer(question, topChunks);
+
+  return {
+    success: true,
+    userEmail,
+    message: `Found ${topChunks.length} relevant document chunk(s).`,
+    answer: builtAnswer.answer,
+    results: builtAnswer.results,
+  };
 }
+
+export async function searchDocuments(question: string): Promise<string> {
+  const result = await searchDocumentTool(question);
+
+  if (result.answer) {
+    return `📄 Document Answer
+
+Question:
+${question}
+
+Answer:
+${result.answer}`;
+  }
+
+  return result.message || "No document answer found.";
+}
+
+export const documentSearchTool = searchDocumentTool;
+
+export default searchDocumentTool;

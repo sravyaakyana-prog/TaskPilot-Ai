@@ -1,34 +1,35 @@
 import { Request, Response } from "express";
 import {
-  clearChatHistory,
-  createConversation,
+  clearConversations,
   getConversationById,
-  getConversationSummaries,
+  getConversations,
 } from "../database/chatStore";
+import { getCurrentUserEmail } from "../utils/currentUser";
 
-export async function listHistoryController(_req: Request, res: Response) {
+export async function getHistoryController(_req: Request, res: Response) {
   try {
-    const conversations = await getConversationSummaries();
+    const userEmail = getCurrentUserEmail();
+    const conversations = await getConversations(userEmail);
 
     return res.json({
       success: true,
+      userEmail,
       conversations,
     });
-  } catch (error) {
-    console.error("List history error:", error);
-
+  } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: "Failed to load chat history.",
+      error: error.message || "Failed to load chat history.",
     });
   }
 }
 
 export async function getConversationController(req: Request, res: Response) {
   try {
-    const { conversationId } = req.params;
+    const userEmail = getCurrentUserEmail();
+    const conversationId = req.params.id;
 
-    const conversation = await getConversationById(conversationId);
+    const conversation = await getConversationById(userEmail, conversationId);
 
     if (!conversation) {
       return res.status(404).json({
@@ -39,55 +40,32 @@ export async function getConversationController(req: Request, res: Response) {
 
     return res.json({
       success: true,
+      userEmail,
       conversation,
     });
-  } catch (error) {
-    console.error("Get conversation error:", error);
-
+  } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: "Failed to load conversation.",
-    });
-  }
-}
-
-export async function createHistoryController(req: Request, res: Response) {
-  try {
-    const title =
-      typeof req.body?.title === "string" && req.body.title.trim()
-        ? req.body.title.trim()
-        : "New Conversation";
-
-    const conversation = await createConversation(title);
-
-    return res.json({
-      success: true,
-      conversation,
-    });
-  } catch (error) {
-    console.error("Create history error:", error);
-
-    return res.status(500).json({
-      success: false,
-      error: "Failed to create conversation.",
+      error: error.message || "Failed to load conversation.",
     });
   }
 }
 
 export async function clearHistoryController(_req: Request, res: Response) {
   try {
-    await clearChatHistory();
+    const userEmail = getCurrentUserEmail();
+
+    await clearConversations(userEmail);
 
     return res.json({
       success: true,
-      message: "Chat history cleared successfully.",
+      userEmail,
+      message: "Chat history cleared.",
     });
-  } catch (error) {
-    console.error("Clear history error:", error);
-
+  } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: "Failed to clear chat history.",
+      error: error.message || "Failed to clear chat history.",
     });
   }
 }

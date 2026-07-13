@@ -1,52 +1,55 @@
 import { Request, Response } from "express";
-import { getAllDocuments } from "../database/documentStore";
+import { getDocuments } from "../database/documentStore";
 import { processUploadedDocument } from "../services/document.service";
+import { getCurrentUserEmail } from "../utils/currentUser";
 
 export async function uploadDocumentController(req: Request, res: Response) {
   try {
+    const userEmail = getCurrentUserEmail();
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        error: "No file uploaded.",
+        error: "No file uploaded. Please upload a PDF or TXT file.",
       });
     }
 
-    const document = await processUploadedDocument(req.file);
+    const document = await processUploadedDocument(req.file, userEmail);
 
     return res.json({
       success: true,
-      message: "Document uploaded and processed successfully.",
+      userEmail,
       document,
     });
   } catch (error: any) {
-    console.error("Document upload error:", error);
-
     return res.status(500).json({
       success: false,
-      error: error.message || "Failed to process document.",
+      error:
+        error.message ||
+        "Could not process this document. Please upload a readable PDF or TXT file.",
     });
   }
 }
 
-export async function listDocumentsController(_req: Request, res: Response) {
+export async function getDocumentsController(_req: Request, res: Response) {
   try {
-    const documents = (await getAllDocuments()).map((document) => ({
-      id: document.id,
-      fileName: document.fileName,
-      uploadedAt: document.uploadedAt,
-      totalChunks: document.totalChunks,
-    }));
+    const userEmail = getCurrentUserEmail();
+    const documents = await getDocuments(userEmail);
 
     return res.json({
       success: true,
-      documents,
+      userEmail,
+      documents: documents.map((document) => ({
+        id: document.id,
+        fileName: document.fileName,
+        uploadedAt: document.uploadedAt,
+        totalChunks: document.totalChunks,
+      })),
     });
-  } catch (error) {
-    console.error("List documents error:", error);
-
+  } catch (error: any) {
     return res.status(500).json({
       success: false,
-      error: "Failed to list documents.",
+      error: error.message || "Failed to load documents.",
     });
   }
 }
