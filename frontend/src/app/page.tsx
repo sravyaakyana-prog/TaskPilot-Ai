@@ -78,11 +78,11 @@ const quickActions = [
     prompt: "What is this document about?",
   },
   {
-  icon: "✨",
-  title: "Try Demo",
-  description: "No login needed",
-  prompt: "Run demo mode and show what TaskPilot AI can do",
-},
+    icon: "✨",
+    title: "Try Demo",
+    description: "No login needed",
+    prompt: "Run demo mode and show what TaskPilot AI can do",
+  },
 ];
 
 function timeNow() {
@@ -187,40 +187,41 @@ export default function Home() {
   const connectGoogle = () => {
     window.location.href = `${API_BASE_URL}/api/auth/google`;
   };
+
   const disconnectGoogle = async () => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/auth/google/disconnect`, {
-      method: "POST",
-    });
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/google/disconnect`, {
+        method: "POST",
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    setGoogleStatus({
-      connected: false,
-      user: null,
-    });
+      setGoogleStatus({
+        connected: false,
+        user: null,
+      });
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content:
-          data.message ||
-          "Google account disconnected. Gmail and Calendar tools will use demo mode until you connect again.",
-        time: timeNow(),
-      },
-    ]);
-  } catch {
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: "Could not disconnect Google account. Please try again.",
-        time: timeNow(),
-      },
-    ]);
-  }
-};
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            data.message ||
+            "Google account disconnected. Gmail and Calendar tools will use demo mode until you connect again.",
+          time: timeNow(),
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Could not disconnect Google account. Please try again.",
+          time: timeNow(),
+        },
+      ]);
+    }
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -588,7 +589,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
     <main className="h-screen overflow-hidden bg-[#060A14] text-white">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(124,58,237,0.28),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(14,165,233,0.18),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(79,70,229,0.12),transparent_35%)]" />
 
-      <div className="relative grid h-screen grid-cols-[290px_1fr_370px]">
+      <div className="relative grid h-screen grid-cols-[270px_1fr_340px]">
         <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#070B16]/80 backdrop-blur-2xl">
           <div className="px-5 py-6">
             <div className="flex items-center gap-3">
@@ -608,7 +609,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
 
             <button
               onClick={startNewChat}
-              className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-violet-500/20 transition hover:scale-[1.01]"
+              className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-violet-500/20 transition hover:scale-[1.01]"
             >
               + New Chat
             </button>
@@ -629,7 +630,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
                 )}
               </div>
 
-              <div className="mt-4 max-h-[530px] space-y-2 overflow-y-auto pr-1">
+              <div className="mt-4 max-h-[540px] space-y-2 overflow-y-auto pr-1">
                 {history.length === 0 ? (
                   <p className="rounded-2xl bg-[#050816] p-3 text-xs text-slate-500">
                     No saved chats yet.
@@ -666,47 +667,47 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
           </div>
 
           <div className="border-t border-white/10 p-5">
-  <div className="flex items-center gap-3">
-    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-black text-white">
-      {userInitials}
-    </div>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-black text-white">
+                {userInitials}
+              </div>
 
-    <div className="min-w-0 flex-1">
-      <p className="truncate text-sm font-bold">{fullName}</p>
-      <p className="truncate text-xs text-slate-500">{userEmail}</p>
-    </div>
-  </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{fullName}</p>
+                <p className="truncate text-xs text-slate-500">{userEmail}</p>
+              </div>
+            </div>
 
-  {googleStatus.connected ? (
-    <button
-      onClick={disconnectGoogle}
-      className="mt-4 w-full rounded-2xl border border-red-400/20 px-4 py-2.5 text-xs font-bold text-red-300 transition hover:bg-red-500/10 hover:text-red-200"
-    >
-      Disconnect Google
-    </button>
-  ) : (
-    <button
-      onClick={connectGoogle}
-      className="mt-4 w-full rounded-2xl border border-blue-400/25 px-4 py-2.5 text-xs font-bold text-blue-300 transition hover:bg-blue-500/10 hover:text-blue-200"
-    >
-      Connect Google
-    </button>
-  )}
-</div>
+            {googleStatus.connected ? (
+              <button
+                onClick={disconnectGoogle}
+                className="mt-4 w-full rounded-2xl border border-red-400/20 px-4 py-2.5 text-xs font-bold text-red-300 transition hover:bg-red-500/10 hover:text-red-200"
+              >
+                Disconnect Google
+              </button>
+            ) : (
+              <button
+                onClick={connectGoogle}
+                className="mt-4 w-full rounded-2xl border border-blue-400/25 px-4 py-2.5 text-xs font-bold text-blue-300 transition hover:bg-blue-500/10 hover:text-blue-200"
+              >
+                Connect Google
+              </button>
+            )}
+          </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col px-9 py-7">
+        <section className="flex min-h-0 flex-col px-7 py-5">
           <header className="flex items-start justify-between gap-5">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.45em] text-cyan-300">
                 Multi-Tool AI Agent
               </p>
 
-              <h2 className="mt-3 bg-gradient-to-r from-white via-cyan-100 to-violet-200 bg-clip-text text-4xl font-black tracking-tight text-transparent">
+              <h2 className="mt-2 bg-gradient-to-r from-white via-cyan-100 to-violet-200 bg-clip-text text-3xl font-black tracking-tight text-transparent">
                 Hi, {displayName} 👋
               </h2>
 
-              <p className="mt-2 text-sm leading-6 text-slate-400">
+              <p className="mt-1 text-sm leading-6 text-slate-400">
                 Your AI workspace for Gmail, Calendar, documents, and automation.
               </p>
             </div>
@@ -722,18 +723,18 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
             </div>
           </header>
 
-        <div className="mt-7 grid gap-4 md:grid-cols-5">
+          <div className="mt-5 grid gap-3 md:grid-cols-5">
             {quickActions.map((action) => (
               <button
                 key={action.title}
                 onClick={() => sendMessage(action.prompt)}
-                className="group rounded-3xl border border-white/10 bg-white/[0.045] p-5 text-left shadow-xl shadow-black/10 transition hover:-translate-y-1 hover:border-cyan-400/30 hover:bg-white/[0.075]"
+                className="group rounded-3xl border border-white/10 bg-white/[0.045] p-4 text-left shadow-xl shadow-black/10 transition hover:-translate-y-1 hover:border-cyan-400/30 hover:bg-white/[0.075]"
               >
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-cyan-400/15 text-xl ring-1 ring-white/10">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/25 to-cyan-400/15 text-lg ring-1 ring-white/10">
                   {action.icon}
                 </div>
 
-                <p className="mt-4 font-bold">{action.title}</p>
+                <p className="mt-3 font-bold">{action.title}</p>
                 <p className="mt-1 text-xs text-slate-500">
                   {action.description}
                 </p>
@@ -741,11 +742,11 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
             ))}
           </div>
 
-          <div className="mt-7 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#081120]/80 shadow-2xl shadow-black/30 backdrop-blur-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+          <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#081120]/80 shadow-2xl shadow-black/30 backdrop-blur-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div>
                 <h3 className="text-lg font-black">Conversation</h3>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-0.5 text-sm text-slate-500">
                   {currentConversationId
                     ? "Saved conversation"
                     : "New agent workspace"}
@@ -757,7 +758,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
               </span>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6 pb-28">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6 pb-32">
               {messages.map((msg, index) => (
                 <div
                   key={index}
@@ -771,7 +772,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
                     </div>
                   )}
 
-                  <div className="max-w-[74%]">
+                  <div className="max-w-[78%]">
                     <div
                       className={`whitespace-pre-wrap rounded-3xl px-5 py-4 text-sm leading-7 shadow-lg ${
                         msg.role === "user"
@@ -847,7 +848,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
               <div ref={bottomRef} />
             </div>
 
-            <div className="border-t border-white/10 p-5">
+            <div className="border-t border-white/10 p-4">
               <div className="flex items-center gap-3 rounded-3xl border border-white/10 bg-[#050816] p-3">
                 <input
                   ref={composerFileInputRef}
@@ -909,7 +910,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
           </div>
         </section>
 
-        <aside className="min-h-0 space-y-5 overflow-y-auto border-l border-white/10 bg-[#070B16]/75 p-6 backdrop-blur-2xl">
+        <aside className="min-h-0 space-y-4 overflow-y-auto border-l border-white/10 bg-[#070B16]/75 p-5 backdrop-blur-2xl">
           <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-5 shadow-xl shadow-black/10">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-300">
