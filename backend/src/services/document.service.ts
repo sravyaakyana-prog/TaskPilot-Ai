@@ -27,37 +27,85 @@ function cleanText(text: string) {
     .trim();
 }
 
-function chunkText(
+function splitIntoParagraphs(text: string) {
+  return text
+    .replace(/\r/g, "\n")
+    .split(/\n{2,}|(?<=[.!?])\s+/)
+    .map((item) => cleanText(item))
+    .filter((item) => item.length > 20);
+}
+
+function createSmartChunks(
   text: string,
   documentId: string,
   fileName: string
 ): DocumentChunk[] {
   const cleaned = cleanText(text);
-  const chunkSize = 900;
-  const overlap = 120;
+  const paragraphs = splitIntoParagraphs(cleaned);
+
+  const chunkSize = 1200;
+  const overlapSize = 180;
 
   const chunks: DocumentChunk[] = [];
 
-  let start = 0;
+  let currentChunk = "";
   let chunkIndex = 0;
 
-  while (start < cleaned.length) {
-    const end = Math.min(start + chunkSize, cleaned.length);
-    const chunkTextValue = cleaned.slice(start, end).trim();
+  function pushChunk(value: string) {
+    const chunkText = cleanText(value);
 
-    if (chunkTextValue.length > 0) {
-      chunks.push({
-        id: generateId("chunk"),
-        documentId,
-        fileName,
-        chunkIndex,
-        text: chunkTextValue,
-      });
+    if (!chunkText || chunkText.length < 30) return;
 
-      chunkIndex++;
+    chunks.push({
+      id: generateId("chunk"),
+      documentId,
+      fileName,
+      chunkIndex,
+      text: chunkText,
+    });
+
+    chunkIndex++;
+  }
+
+  for (const paragraph of paragraphs) {
+    if ((currentChunk + " " + paragraph).length <= chunkSize) {
+      currentChunk = `${currentChunk} ${paragraph}`.trim();
+    } else {
+      pushChunk(currentChunk);
+
+      const overlap = currentChunk.slice(-overlapSize);
+      currentChunk = `${overlap} ${paragraph}`.trim();
+
+      if (currentChunk.length > chunkSize * 1.4) {
+        pushChunk(currentChunk.slice(0, chunkSize));
+        currentChunk = currentChunk.slice(chunkSize - overlapSize);
+      }
     }
+  }
 
-    start += chunkSize - overlap;
+  pushChunk(currentChunk);
+
+  if (chunks.length === 0 && cleaned.length > 0) {
+    let start = 0;
+
+    while (start < cleaned.length) {
+      const end = Math.min(start + chunkSize, cleaned.length);
+      const chunkText = cleaned.slice(start, end).trim();
+
+      if (chunkText.length > 0) {
+        chunks.push({
+          id: generateId("chunk"),
+          documentId,
+          fileName,
+          chunkIndex,
+          text: chunkText,
+        });
+
+        chunkIndex++;
+      }
+
+      start += chunkSize - overlapSize;
+    }
   }
 
   return chunks;
@@ -121,7 +169,7 @@ export async function processUploadedDocument(
   }
 
   const documentId = generateId("doc");
-  const chunks = chunkText(cleanedText, documentId, file.originalname);
+  const chunks = createSmartChunks(cleanedText, documentId, file.originalname);
 
   if (chunks.length === 0) {
     throw new Error("Could not create searchable chunks from this document.");

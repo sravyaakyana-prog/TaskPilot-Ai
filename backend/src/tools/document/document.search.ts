@@ -1,5 +1,16 @@
-import { DocumentChunk, getAllChunks, getDocuments } from "../../database/documentStore";
+import {
+  DocumentChunk,
+  getDocuments,
+  StoredDocument,
+} from "../../database/documentStore";
+import { generateAIResponse } from "../../services/llm.service";
 import { getCurrentUserEmail } from "../../utils/currentUser";
+
+type RankedChunk = {
+  chunk: DocumentChunk;
+  score: number;
+  reasons: string[];
+};
 
 const STOP_WORDS = new Set([
   "the",
@@ -35,16 +46,23 @@ const STOP_WORDS = new Set([
   "explain",
   "file",
   "pdf",
+  "it",
+  "give",
+  "show",
+  "main",
+  "key",
 ]);
 
 const SYNONYMS: Record<string, string[]> = {
   tools: ["gmail", "calendar", "documents", "rag", "email", "draft", "meeting"],
   support: ["supports", "features", "capabilities", "can"],
-  email: ["gmail", "inbox", "draft", "emails"],
+  email: ["gmail", "inbox", "draft", "emails", "mail"],
   meeting: ["calendar", "event", "schedule", "meetings"],
   document: ["rag", "pdf", "file", "documents"],
-  project: ["taskpilot", "agent", "productivity"],
+  project: ["taskpilot", "agent", "productivity", "assistant"],
   ai: ["agent", "assistant", "automation", "taskpilot"],
+  resume: ["cv", "profile", "career", "skills"],
+  internship: ["intern", "job", "role", "application"],
 };
 
 function cleanText(text: string) {
@@ -56,6 +74,7 @@ function tokenize(text: string) {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
+    .map((word) => word.trim())
     .filter((word) => word.length > 2 && !STOP_WORDS.has(word));
 }
 
@@ -75,37 +94,88 @@ function expandTokens(tokens: string[]) {
   return Array.from(expanded);
 }
 
+function getQuestionTokens(question: string) {
+  return expandTokens(tokenize(question));
+}
+
+function getExactPhrases(question: string) {
+  const cleaned = question
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter((word) => word.length > 2);
+  const phrases: string[] = [];
+
+  for (let i = 0; i < words.length - 1; i++) {
+    phrases.push(`${words[i]} ${words[i + 1]}`);
+  }
+
+  for (let i = 0; i < words.length - 2; i++) {
+    phrases.push(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
+  }
+
+  return phrases.filter((phrase) =>
+    phrase.split(" ").some((word) => !STOP_WORDS.has(word))
+  );
+}
+
 function splitIntoSentences(text: string) {
   return cleanText(text)
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 20);
+    .filter((sentence) => sentence.length > 25);
 }
 
-function scoreText(tokens: string[], text: string) {
-  const lowerText = text.toLowerCase();
+function countOccurrences(text: string, token: string) {
+  const matches = text.match(new RegExp(`\\b${token}\\b`, "gi"));
+  return matches ? matches.length : 0;
+}
+
+function scoreChunk(question: string, chunk: DocumentChunk): RankedChunk {
+  const tokens = getQuestionTokens(question);
+  const phrases = getExactPhrases(question);
+  const lowerText = chunk.text.toLowerCase();
+  const lowerFileName = chunk.fileName.toLowerCase();
+
   let score = 0;
+  const reasons: string[] = [];
 
   for (const token of tokens) {
     if (lowerText.includes(token)) {
-      score += 2;
+      const occurrences = countOccurrences(lowerText, token);
+      score += 2 + Math.min(occurrences, 5);
+      reasons.push(`matched keyword "${token}"`);
     }
 
-    const exactWordRegex = new RegExp(`\\b${token}\\b`, "i");
-
-    if (exactWordRegex.test(lowerText)) {
+    if (lowerFileName.includes(token)) {
       score += 3;
+      reasons.push(`matched filename "${token}"`);
     }
   }
 
-  return score;
-}
+  for (const phrase of phrases) {
+    if (lowerText.includes(phrase)) {
+      score += 8;
+      reasons.push(`matched phrase "${phrase}"`);
+    }
+  }
 
-function scoreChunk(questionTokens: string[], chunk: DocumentChunk) {
-  const baseScore = scoreText(questionTokens, chunk.text);
-  const earlyChunkBoost = chunk.chunkIndex === 0 ? 2 : 0;
+  if (chunk.chunkIndex === 0) {
+    score += 2;
+    reasons.push("intro chunk boost");
+  }
 
-  return baseScore + earlyChunkBoost;
+  if (chunk.text.length > 300 && chunk.text.length < 1800) {
+    score += 1;
+  }
+
+  return {
+    chunk,
+    score,
+    reasons: Array.from(new Set(reasons)).slice(0, 4),
+  };
 }
 
 function isSummaryQuery(question: string) {
@@ -121,131 +191,161 @@ function isSummaryQuery(question: string) {
     lowerQuestion.includes("what does this document say") ||
     lowerQuestion.includes("what does it say") ||
     lowerQuestion.includes("explain this document") ||
-    lowerQuestion.includes("explain it")
+    lowerQuestion.includes("explain it") ||
+    lowerQuestion.trim() === "summarize it"
   );
 }
 
-async function getTopChunks(question: string, userEmail: string, limit = 4) {
-  const chunks = await getAllChunks(userEmail);
-  const rawTokens = tokenize(question);
-  const questionTokens = expandTokens(rawTokens);
+function getLatestDocument(documents: StoredDocument[]) {
+  return [...documents].sort(
+    (a, b) =>
+      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
+  )[0];
+}
+
+function getAllDocumentChunks(documents: StoredDocument[]) {
+  return documents.flatMap((document) => document.chunks || []);
+}
+
+function rankChunks(question: string, documents: StoredDocument[], limit = 6) {
+  const chunks = getAllDocumentChunks(documents);
 
   if (chunks.length === 0) {
     return [];
   }
 
-  if (questionTokens.length === 0) {
-    return chunks.slice(0, limit);
+  const ranked = chunks
+    .map((chunk) => scoreChunk(question, chunk))
+    .sort((a, b) => b.score - a.score);
+
+  const positiveMatches = ranked.filter((item) => item.score > 0);
+
+  if (positiveMatches.length > 0) {
+    return positiveMatches.slice(0, limit);
   }
 
-  return chunks
-    .map((chunk) => ({
-      chunk,
-      score: scoreChunk(questionTokens, chunk),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .filter((item) => item.score > 0)
-    .slice(0, limit)
-    .map((item) => item.chunk);
+  const latestDocument = getLatestDocument(documents);
+
+  return latestDocument.chunks.slice(0, limit).map((chunk, index) => ({
+    chunk,
+    score: limit - index,
+    reasons: ["fallback latest document chunk"],
+  }));
 }
 
-function getRelevantSentences(
-  question: string,
-  chunks: DocumentChunk[],
-  limit = 5
-) {
-  const rawTokens = tokenize(question);
-  const questionTokens = expandTokens(rawTokens);
+function getSummaryChunks(documents: StoredDocument[], limit = 6) {
+  const latestDocument = getLatestDocument(documents);
 
-  const sentenceScores = chunks.flatMap((chunk) => {
-    const sentences = splitIntoSentences(chunk.text);
+  return latestDocument.chunks.slice(0, limit).map((chunk, index) => ({
+    chunk,
+    score: limit - index,
+    reasons: ["latest document summary context"],
+  }));
+}
 
-    return sentences.map((sentence) => ({
-      sentence,
-      chunk,
-      score: scoreText(questionTokens, sentence),
-    }));
+function buildContextFromRankedChunks(rankedChunks: RankedChunk[]) {
+  return rankedChunks
+    .map((item, index) => {
+      return `SOURCE ${index + 1}
+File: ${item.chunk.fileName}
+Chunk: ${item.chunk.chunkIndex + 1}
+Score: ${item.score}
+Text:
+${cleanText(item.chunk.text)}`;
+    })
+    .join("\n\n---\n\n")
+    .slice(0, 6000);
+}
+
+function localExtractiveAnswer(question: string, rankedChunks: RankedChunk[]) {
+  const tokens = getQuestionTokens(question);
+
+  const sentenceScores = rankedChunks.flatMap((item) => {
+    const sentences = splitIntoSentences(item.chunk.text);
+
+    return sentences.map((sentence) => {
+      const lowerSentence = sentence.toLowerCase();
+
+      let score = item.score * 0.2;
+
+      for (const token of tokens) {
+        if (lowerSentence.includes(token)) {
+          score += 4;
+        }
+      }
+
+      return {
+        sentence,
+        chunk: item.chunk,
+        score,
+      };
+    });
   });
 
   const rankedSentences = sentenceScores
     .sort((a, b) => b.score - a.score)
-    .filter((item) => item.score > 0)
-    .slice(0, limit);
+    .slice(0, 6)
+    .filter((item) => item.sentence.length > 20);
 
   if (rankedSentences.length === 0) {
-    return chunks.slice(0, 2).map((chunk) => ({
-      sentence: cleanText(chunk.text).slice(0, 500),
-      chunk,
-      score: 1,
-    }));
+    return rankedChunks
+      .slice(0, 3)
+      .map((item) => `- ${cleanText(item.chunk.text).slice(0, 500)}`)
+      .join("\n");
   }
 
-  return rankedSentences;
-}
-
-async function summarizeLatestDocument(userEmail: string) {
-  const documents = await getDocuments(userEmail);
-
-  if (documents.length === 0) {
-    return null;
-  }
-
-  const latestDocument = documents[0];
-  const firstChunks = latestDocument.chunks.slice(0, 4);
-
-  const context = cleanText(firstChunks.map((chunk) => chunk.text).join(" "));
-  const sentences = splitIntoSentences(context);
-
-  const summarySentences = sentences.slice(0, 6);
-
-  return {
-    documentId: latestDocument.id,
-    fileName: latestDocument.fileName,
-    totalChunks: latestDocument.totalChunks,
-    summaryText:
-      summarySentences.length > 0
-        ? summarySentences.join(" ")
-        : context.slice(0, 1200),
-    chunks: firstChunks,
-  };
-}
-
-function buildAnswer(question: string, chunks: DocumentChunk[]) {
-  const relevantSentences = getRelevantSentences(question, chunks);
-
-  const answerText = relevantSentences
+  return rankedSentences
     .map((item) => `- ${item.sentence}`)
     .join("\n");
+}
 
-  const uniqueSources = Array.from(
+function buildSources(rankedChunks: RankedChunk[]) {
+  const uniqueChunks = Array.from(
     new Map(
-      relevantSentences.map((item) => [
-        `${item.chunk.fileName}-${item.chunk.chunkIndex}`,
-        item.chunk,
+      rankedChunks.map((item) => [
+        `${item.chunk.documentId}-${item.chunk.chunkIndex}`,
+        item,
       ])
     ).values()
   );
 
-  return {
-    answer: `Based on the uploaded document, I found these relevant points:
+  return uniqueChunks.slice(0, 5).map((item) => ({
+    documentId: item.chunk.documentId,
+    fileName: item.chunk.fileName,
+    chunkIndex: item.chunk.chunkIndex,
+    text: item.chunk.text,
+    score: item.score,
+    reasons: item.reasons,
+  }));
+}
 
-${answerText}
+async function generateGroundedAnswer(params: {
+  question: string;
+  context: string;
+  isSummary: boolean;
+  userEmail: string;
+}) {
+  const instruction = params.isSummary
+    ? `Summarize the uploaded document using only the provided context.
+Give:
+1. Short overview
+2. Key points
+3. What the document is mainly about`
+    : `Answer the user's question using only the provided document context.
+If the answer is not present in the context, say that it is not clearly available in the uploaded document.
+Give a clear answer with bullet points when useful.`;
 
-Sources:
-${uniqueSources
-  .map((chunk) => `- ${chunk.fileName}, chunk ${chunk.chunkIndex + 1}`)
-  .join("\n")}
+  const result = await generateAIResponse({
+    message: `${instruction}
 
-RAG Mode:
-MongoDB document chunks + local sentence ranking.`,
-    results: uniqueSources.map((chunk, index) => ({
-      documentId: chunk.documentId,
-      fileName: chunk.fileName,
-      chunkIndex: chunk.chunkIndex,
-      text: chunk.text,
-      score: uniqueSources.length - index,
-    })),
-  };
+User question:
+${params.question}`,
+    intent: "DOCUMENT_QA",
+    userEmail: params.userEmail,
+    context: params.context,
+  });
+
+  return result;
 }
 
 export async function searchDocumentTool(question: string) {
@@ -261,79 +361,79 @@ export async function searchDocumentTool(question: string) {
       answer:
         "No uploaded documents found. Please upload a PDF or TXT file first.",
       results: [],
+      mode: "NO_DOCUMENTS",
     };
   }
 
-  if (isSummaryQuery(question)) {
-    const summary = await summarizeLatestDocument(userEmail);
+  const summaryQuery = isSummaryQuery(question);
 
-    if (!summary) {
-      return {
-        success: true,
-        userEmail,
-        message: "No readable document content found.",
-        answer: "No readable document content found.",
-        results: [],
-      };
-    }
+  const rankedChunks = summaryQuery
+    ? getSummaryChunks(documents, 6)
+    : rankChunks(question, documents, 6);
 
+  if (rankedChunks.length === 0) {
     return {
       success: true,
       userEmail,
-      message: "Document summary generated successfully.",
-      answer: `File:
-${summary.fileName}
-
-Total Chunks:
-${summary.totalChunks}
-
-Summary:
-${summary.summaryText}
-
-Sources:
-- ${summary.fileName}
-
-RAG Mode:
-MongoDB latest document summary.`,
-      results: summary.chunks.map((chunk, index) => ({
-        documentId: summary.documentId,
-        fileName: summary.fileName,
-        chunkIndex: chunk.chunkIndex,
-        text: chunk.text,
-        score: summary.chunks.length - index,
-      })),
-    };
-  }
-
-  const topChunks = await getTopChunks(question, userEmail);
-
-  if (topChunks.length === 0) {
-    return {
-      success: true,
-      userEmail,
-      message: "No strong matching content found.",
-      answer: `I could not find a strong match in your uploaded documents for:
-
-${question}
-
-Try asking with keywords that appear in the document.
-
-Available Documents:
-${documents
-  .map((document) => `- ${document.fileName} (${document.totalChunks} chunks)`)
-  .join("\n")}`,
+      message: "No readable chunks found in your uploaded documents.",
+      answer:
+        "I could not find readable chunks in your uploaded documents. Please upload a text-based PDF or TXT file.",
       results: [],
+      mode: "NO_CHUNKS",
     };
   }
 
-  const builtAnswer = buildAnswer(question, topChunks);
+  const context = buildContextFromRankedChunks(rankedChunks);
+  const localAnswer = localExtractiveAnswer(question, rankedChunks);
+  const sources = buildSources(rankedChunks);
+
+  let finalAnswer = "";
+  let provider = "local";
+  let usedFallback = false;
+
+  try {
+    const llmResult = await generateGroundedAnswer({
+      question,
+      context,
+      isSummary: summaryQuery,
+      userEmail,
+    });
+
+    if (llmResult.usedFallback) {
+      finalAnswer = localAnswer;
+      provider = "local-fallback";
+      usedFallback = true;
+    } else {
+      finalAnswer = llmResult.text;
+      provider = llmResult.provider;
+      usedFallback = false;
+    }
+  } catch {
+    finalAnswer = localAnswer;
+    provider = "local-fallback";
+    usedFallback = true;
+  }
 
   return {
     success: true,
     userEmail,
-    message: `Found ${topChunks.length} relevant document chunk(s).`,
-    answer: builtAnswer.answer,
-    results: builtAnswer.results,
+    message: summaryQuery
+      ? "Document summary generated successfully."
+      : `Found ${sources.length} relevant document source(s).`,
+    answer: `${finalAnswer}
+
+Sources:
+${sources
+  .map((source) => `- ${source.fileName}, chunk ${source.chunkIndex + 1}`)
+  .join("\n")}
+
+RAG Mode:
+Hybrid MongoDB chunk retrieval + Gemini grounded answer.
+
+Provider:
+${provider}${usedFallback ? " fallback" : ""}`,
+    results: sources,
+    mode: summaryQuery ? "DOCUMENT_SUMMARY" : "DOCUMENT_QA",
   };
 }
 

@@ -220,17 +220,14 @@ function formatToolResult(tool: string, result: any) {
   }
 
   if (tool === "document.search") {
-    if (result.answer) {
-      return `📄 Document Answer
+  if (result.answer) {
+    return `📄 Document Answer
 
-${result.answer}
-
-Source:
-${result.results?.[0]?.fileName || "Uploaded document"}`;
-    }
-
-    return result.message || "No document answer found.";
+${result.answer}`;
   }
+
+  return result.message || "No document answer found.";
+}
 
   if (result.reply) {
     return result.reply;

@@ -102,11 +102,30 @@ export function classifyIntent(message: string): IntentClassification {
     text.includes("what does it say") ||
     text.includes("what does this say") ||
     text.includes("explain it") ||
-    text.includes("explain this")
+    text.includes("explain this") ||
+    text.includes("key points") ||
+    text.includes("main points") ||
+    text.includes("important points") ||
+    text.includes("main topics") ||
+    text.includes("important topics") ||
+    text.includes("key takeaways") ||
+    text.includes("takeaways") ||
+    text.includes("highlights") ||
+    text.includes("important concepts") ||
+    text.includes("main concepts") ||
+    text.includes("short notes") ||
+    text.includes("notes from it") ||
+    text.includes("questions from it") ||
+    text.includes("make notes") ||
+    text.includes("give notes") ||
+    text.includes("explain the key") ||
+    text.includes("what are the key") ||
+    text.includes("what are main") ||
+    text.includes("what are important")
   ) {
     return {
       intent: "DOCUMENT_QA",
-      confidence: 0.88,
+      confidence: 0.9,
       reason: "User is asking about uploaded documents or document RAG.",
     };
   }
