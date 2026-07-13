@@ -1,29 +1,23 @@
 import mongoose, { Schema } from "mongoose";
 
-const AgentTraceSchema = new Schema(
-  {
-    intent: { type: String, required: true },
-    confidence: { type: Number, required: true },
-    tool: { type: String, default: null },
-    toolRequired: { type: Boolean, required: true },
-    steps: [{ type: String }],
-  },
-  { _id: false }
-);
-
 const ChatMessageSchema = new Schema(
   {
-    id: { type: String, required: true },
     role: {
       type: String,
       enum: ["user", "assistant"],
       required: true,
     },
-    content: { type: String, required: true },
-    createdAt: { type: String, required: true },
+    content: {
+      type: String,
+      required: true,
+    },
     agent: {
-      type: AgentTraceSchema,
-      required: false,
+      type: Schema.Types.Mixed,
+      default: null,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
     },
   },
   { _id: false }
@@ -31,16 +25,39 @@ const ChatMessageSchema = new Schema(
 
 const ChatConversationSchema = new Schema(
   {
-    title: { type: String, required: true },
-    createdAt: { type: String, required: true },
-    updatedAt: { type: String, required: true },
-    messages: [ChatMessageSchema],
+    id: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    userEmail: {
+      type: String,
+      required: true,
+      default: "guest@taskpilot.local",
+      index: true,
+    },
+    title: {
+      type: String,
+      required: true,
+      default: "New Chat",
+    },
+    messages: {
+      type: [ChatMessageSchema],
+      default: [],
+    },
   },
   {
-    collection: "chat_conversations",
+    timestamps: true,
   }
 );
 
+ChatConversationSchema.index({ userEmail: 1, updatedAt: -1 });
+
 export const ChatConversationModel =
   mongoose.models.ChatConversation ||
-  mongoose.model("ChatConversation", ChatConversationSchema);
+  mongoose.model(
+    "ChatConversation",
+    ChatConversationSchema,
+    "chat_conversations"
+  );
