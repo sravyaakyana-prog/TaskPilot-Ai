@@ -1,7 +1,14 @@
 import { saveChatTurn } from "../database/chatStore";
+import { isGoogleConnected } from "../database/tokenStore";
 import { classifyIntent } from "../intents/classifier";
-import { searchDocumentTool } from "../tools/document/document.search";
+import {
+  getDemoOverview,
+  getDemoToolResult,
+  isDemoModeEnabled,
+  isDemoRequest,
+} from "./demo.service";
 import { generateAIResponse } from "./llm.service";
+import { searchDocumentTool } from "../tools/document/document.search";
 import { getCurrentUserEmail } from "../utils/currentUser";
 
 type AgentTrace = {
@@ -54,6 +61,23 @@ function createAgentTrace(
   };
 }
 
+function shouldUseDemoTool(tool: string | null, message: string) {
+  if (!isDemoModeEnabled()) return false;
+
+  if (isDemoRequest(message)) return true;
+
+  if (!tool) return false;
+
+  const googleTool =
+    tool.startsWith("gmail.") || tool.startsWith("calendar.");
+
+  if (googleTool && !isGoogleConnected()) {
+    return true;
+  }
+
+  return false;
+}
+
 async function loadToolFunction(
   modulePath: string,
   possibleExportNames: string[]
@@ -90,6 +114,10 @@ async function callToolFunction(toolFunction: any, message: string) {
 }
 
 async function runExternalTool(tool: string, message: string) {
+  if (shouldUseDemoTool(tool, message)) {
+    return getDemoToolResult(tool, message);
+  }
+
   if (tool === "document.search") {
     return searchDocumentTool(message);
   }
@@ -219,15 +247,19 @@ function formatToolResult(tool: string, result: any) {
     return result.error || result.message || "Tool execution failed.";
   }
 
-  if (tool === "document.search") {
-  if (result.answer) {
-    return `📄 Document Answer
-
-${result.answer}`;
+  if (result.demo && result.message) {
+    return result.message;
   }
 
-  return result.message || "No document answer found.";
-}
+  if (tool === "document.search") {
+    if (result.answer) {
+      return `📄 Document Answer
+
+${result.answer}`;
+    }
+
+    return result.message || "No document answer found.";
+  }
 
   if (result.reply) {
     return result.reply;
@@ -284,6 +316,28 @@ export async function handleChatMessage(
 ): Promise<ChatServiceResponse> {
   const userEmail = getCurrentUserEmail();
 
+  if (isDemoModeEnabled() && isDemoRequest(message)) {
+    const agent = createAgentTrace("DEMO_MODE", 0.99, "demo.mode");
+
+    const reply = getDemoOverview();
+
+    const savedConversation = await saveChatTurn({
+      userEmail,
+      conversationId,
+      userMessage: message,
+      assistantMessage: reply,
+      agent,
+    });
+
+    return {
+      success: true,
+      reply,
+      conversationId: savedConversation?.id || null,
+      agent,
+      userEmail,
+    };
+  }
+
   const classification = classifyIntent(message);
   const tool = getToolForIntent(classification.intent);
 
@@ -296,6 +350,10 @@ export async function handleChatMessage(
   let reply = "";
 
   if (tool) {
+    if (shouldUseDemoTool(tool, message)) {
+      agent.steps.splice(2, 0, "Used demo data because real account is not connected");
+    }
+
     const toolResult = await runExternalTool(tool, message);
     reply = formatToolResult(tool, toolResult);
   } else {

@@ -7,15 +7,34 @@ export function classifyIntent(message: string): IntentClassification {
     text.includes("summarize my unread") ||
     text.includes("summarise my unread") ||
     text.includes("unread emails") ||
+    text.includes("unread email") ||
     text.includes("summarize inbox") ||
     text.includes("summarise inbox") ||
     text.includes("gmail summary") ||
-    text.includes("email summary")
+    text.includes("email summary") ||
+    text.includes("mail summary") ||
+    text.includes("summarize my emails") ||
+    text.includes("summarise my emails") ||
+    text.includes("summarize my email") ||
+    text.includes("summarise my email") ||
+    text.includes("summarize emails") ||
+    text.includes("summarise emails") ||
+    text.includes("summarize email") ||
+    text.includes("summarise email") ||
+    text.includes("summarize my mails") ||
+    text.includes("summarise my mails") ||
+    text.includes("summarize mails") ||
+    text.includes("summarise mails") ||
+    text.includes("check my emails") ||
+    text.includes("check my email") ||
+    text.includes("check my gmail") ||
+    text.includes("read my emails") ||
+    text.includes("read my gmail")
   ) {
     return {
       intent: "EMAIL_SUMMARY",
-      confidence: 0.92,
-      reason: "User wants Gmail or unread email summary.",
+      confidence: 0.94,
+      reason: "User wants Gmail/email summary.",
     };
   }
 
@@ -23,9 +42,12 @@ export function classifyIntent(message: string): IntentClassification {
     text.includes("find emails") ||
     text.includes("search emails") ||
     text.includes("find email") ||
+    text.includes("search email") ||
     text.includes("search gmail") ||
     text.includes("emails about") ||
     text.includes("email about") ||
+    text.includes("mails about") ||
+    text.includes("mail about") ||
     text.includes("from gmail") ||
     text.includes("from coursera") ||
     text.includes("from linkedin")
@@ -43,7 +65,8 @@ export function classifyIntent(message: string): IntentClassification {
     text.includes("create email") ||
     text.includes("compose email") ||
     text.includes("draft a mail") ||
-    text.includes("write a mail")
+    text.includes("write a mail") ||
+    text.includes("compose a mail")
   ) {
     return {
       intent: "EMAIL_DRAFT",
@@ -117,11 +140,7 @@ export function classifyIntent(message: string): IntentClassification {
     text.includes("notes from it") ||
     text.includes("questions from it") ||
     text.includes("make notes") ||
-    text.includes("give notes") ||
-    text.includes("explain the key") ||
-    text.includes("what are the key") ||
-    text.includes("what are main") ||
-    text.includes("what are important")
+    text.includes("give notes")
   ) {
     return {
       intent: "DOCUMENT_QA",

@@ -77,6 +77,12 @@ const quickActions = [
     description: "Ask uploaded files",
     prompt: "What is this document about?",
   },
+  {
+  icon: "✨",
+  title: "Try Demo",
+  description: "No login needed",
+  prompt: "Run demo mode and show what TaskPilot AI can do",
+},
 ];
 
 function timeNow() {
@@ -181,6 +187,40 @@ export default function Home() {
   const connectGoogle = () => {
     window.location.href = `${API_BASE_URL}/api/auth/google`;
   };
+  const disconnectGoogle = async () => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/google/disconnect`, {
+      method: "POST",
+    });
+
+    const data = await res.json();
+
+    setGoogleStatus({
+      connected: false,
+      user: null,
+    });
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content:
+          data.message ||
+          "Google account disconnected. Gmail and Calendar tools will use demo mode until you connect again.",
+        time: timeNow(),
+      },
+    ]);
+  } catch {
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: "Could not disconnect Google account. Please try again.",
+        time: timeNow(),
+      },
+    ]);
+  }
+};
 
   const fetchDocuments = async () => {
     try {
@@ -626,17 +666,33 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
           </div>
 
           <div className="border-t border-white/10 p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-black text-white">
-                {userInitials}
-              </div>
+  <div className="flex items-center gap-3">
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-black text-white">
+      {userInitials}
+    </div>
 
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold">{fullName}</p>
-                <p className="truncate text-xs text-slate-500">{userEmail}</p>
-              </div>
-            </div>
-          </div>
+    <div className="min-w-0 flex-1">
+      <p className="truncate text-sm font-bold">{fullName}</p>
+      <p className="truncate text-xs text-slate-500">{userEmail}</p>
+    </div>
+  </div>
+
+  {googleStatus.connected ? (
+    <button
+      onClick={disconnectGoogle}
+      className="mt-4 w-full rounded-2xl border border-red-400/20 px-4 py-2.5 text-xs font-bold text-red-300 transition hover:bg-red-500/10 hover:text-red-200"
+    >
+      Disconnect Google
+    </button>
+  ) : (
+    <button
+      onClick={connectGoogle}
+      className="mt-4 w-full rounded-2xl border border-blue-400/25 px-4 py-2.5 text-xs font-bold text-blue-300 transition hover:bg-blue-500/10 hover:text-blue-200"
+    >
+      Connect Google
+    </button>
+  )}
+</div>
         </aside>
 
         <section className="flex min-h-0 flex-col px-9 py-7">
@@ -666,7 +722,7 @@ ${data.error || "Please upload a readable PDF or TXT file."}`,
             </div>
           </header>
 
-          <div className="mt-7 grid gap-4 md:grid-cols-4">
+        <div className="mt-7 grid gap-4 md:grid-cols-5">
             {quickActions.map((action) => (
               <button
                 key={action.title}
