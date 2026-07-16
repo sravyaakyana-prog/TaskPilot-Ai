@@ -67,38 +67,35 @@ It uses an agent pipeline with intent classification, tool routing, Gemini-power
 
 ## 🖼️ Screenshots
 
-Create this folder:
+### Dashboard and Quick Actions
 
-```txt
-assets/screenshots
-```
-
-Then add screenshots with these names:
-
-```txt
-assets/screenshots/dashboard.png
-assets/screenshots/demo-mode.png
-assets/screenshots/document-rag.png
-assets/screenshots/agent-trace.png
-```
-
-### Dashboard
+Main TaskPilot AI workspace showing quick actions such as Summarize Inbox, Find Internships, Today Calendar, Summarize Doc, and Try Demo.
 
 ![Dashboard](assets/screenshots/dashboard.png)
 
+### Document Upload
+
+PDF/TXT upload flow showing successful document processing and chunk creation.
+
+![Document Upload](assets/screenshots/document-upload.png)
+
+### Document RAG Answer
+
+Document question-answering flow where TaskPilot summarizes uploaded files using Gemini-powered RAG.
+
+![Document RAG](assets/screenshots/document-rag-answer.png)
+
 ### Demo Mode
+
+Demo mode for testing Gmail and Calendar workflows without connecting a real Google account.
 
 ![Demo Mode](assets/screenshots/demo-mode.png)
 
-### Document RAG
+### Connected Tools
 
-![Document RAG](assets/screenshots/document-rag.png)
+Connected tools panel showing Gmail, Calendar, Documents, and Automation status.
 
-### Agent Trace
-
-![Agent Trace](assets/screenshots/agent-trace.png)
-
----
+![Connected Tools](assets/screenshots/connected-tools.png)
 
 ## 🛠️ Tech Stack
 
