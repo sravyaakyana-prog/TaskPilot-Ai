@@ -11,9 +11,13 @@ const router = express.Router();
 
 const uploadDir = path.join(process.cwd(), "uploads");
 
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+function ensureUploadDir() {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
 }
+
+ensureUploadDir();
 
 function deleteTempFile(filePath?: string) {
   if (!filePath) return;
@@ -29,8 +33,10 @@ function deleteTempFile(filePath?: string) {
 
 const storage = multer.diskStorage({
   destination: (_req, _file, callback) => {
+    ensureUploadDir();
     callback(null, uploadDir);
   },
+
   filename: (_req, file, callback) => {
     const safeFileName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
     callback(null, `${Date.now()}-${safeFileName}`);
@@ -55,15 +61,18 @@ const upload = multer({
   },
 });
 
-function handleUploadErrors(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
+function handleUploadErrors(req: Request, res: Response, next: NextFunction) {
   upload.single("file")(req, res, (error: any) => {
     if (!error) {
       return next();
     }
+
+    console.error("DOCUMENT_ROUTE_UPLOAD_ERROR:", {
+      name: error?.name,
+      message: error?.message,
+      code: error?.code,
+      stack: error?.stack,
+    });
 
     deleteTempFile(req.file?.path);
 
