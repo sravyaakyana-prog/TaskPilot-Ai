@@ -1,8 +1,38 @@
 # TaskPilot AI — Multi-Tool AI Productivity Agent
 
-TaskPilot AI is a full-stack AI productivity assistant that connects Gmail, Google Calendar, document intelligence, chat history, and AI agent workflows into one modern SaaS-style workspace.
+TaskPilot AI is a full-stack AI productivity assistant that connects **Gmail**, **Google Calendar**, **document intelligence**, **chat history**, and **AI agent workflows** into one modern SaaS-style workspace.
 
-It uses an agent pipeline with intent classification, tool routing, Gemini-powered responses, document RAG, MongoDB persistence, Google OAuth, and demo mode to help users summarize emails, search Gmail, draft emails, check calendar events, create meetings, upload documents, and ask questions from files.
+It uses an agent pipeline with **intent classification**, **tool routing**, **Gemini-powered responses**, **document RAG**, **MongoDB persistence**, **Google OAuth**, and **demo mode** to help users summarize emails, search Gmail, draft emails, check calendar events, create meetings, upload documents, and ask questions from files.
+
+---
+
+## 🌐 Live Demo
+
+### Frontend
+
+```txt
+https://task-pilot-ai-tau.vercel.app
+```
+
+### Backend API
+
+```txt
+https://taskpilot-ai-backend-tfa5.onrender.com
+```
+
+### Backend Health Check
+
+```txt
+https://taskpilot-ai-backend-tfa5.onrender.com/api/health
+```
+
+### GitHub Repository
+
+```txt
+https://github.com/sravyaakyana-prog/TaskPilot-Ai
+```
+
+> Note: Gmail and Calendar features require Google OAuth connection. Demo mode is available for reviewers who do not want to connect a Google account.
 
 ---
 
@@ -14,7 +44,7 @@ It uses an agent pipeline with intent classification, tool routing, Gemini-power
 - Tool routing based on detected intent
 - Agent trace showing selected tool, confidence, and execution steps
 - Gemini-powered responses with fallback support
-- Demo mode for recruiter testing without Google login
+- Demo mode for recruiter/reviewer testing without Google login
 
 ### Gmail Assistant
 
@@ -35,7 +65,7 @@ It uses an agent pipeline with intent classification, tool routing, Gemini-power
 ### Document Intelligence / RAG
 
 - Upload PDF and TXT files
-- Extract readable text from documents
+- Extract readable text from text-based PDFs and TXT files
 - Smart document chunking
 - MongoDB-backed document storage
 - Hybrid chunk retrieval
@@ -60,8 +90,8 @@ It uses an agent pipeline with intent classification, tool routing, Gemini-power
 - Health check endpoint
 - Production CORS setup
 - Environment variable configuration
-- Clean frontend upload validation
-- SaaS-style dashboard UI
+- Frontend file validation
+- SaaS-style deployed dashboard UI
 
 ---
 
@@ -97,6 +127,8 @@ Connected tools panel showing Gmail, Calendar, Documents, and Automation status.
 
 ![Connected Tools](assets/screenshots/connected-tools.png)
 
+---
+
 ## 🛠️ Tech Stack
 
 ### Frontend
@@ -105,6 +137,7 @@ Connected tools panel showing Gmail, Calendar, Documents, and Automation status.
 - React
 - TypeScript
 - Tailwind CSS
+- Vercel deployment
 
 ### Backend
 
@@ -114,6 +147,7 @@ Connected tools panel showing Gmail, Calendar, Documents, and Automation status.
 - Multer
 - Google APIs
 - Gemini API
+- Render deployment
 
 ### Database
 
@@ -211,7 +245,7 @@ TaskPilot-AI
 
 ### Backend `.env`
 
-Create a file:
+Create:
 
 ```txt
 backend/.env
@@ -221,6 +255,9 @@ Add:
 
 ```env
 PORT=5000
+NODE_ENV=development
+
+MONGODB_URI=your_mongodb_atlas_connection_string_here
 
 LLM_PROVIDER=gemini
 LLM_FALLBACK_PROVIDER=mock
@@ -228,8 +265,6 @@ LLM_FALLBACK_PROVIDER=mock
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite
 GEMINI_MAX_OUTPUT_TOKENS=350
-
-MONGODB_URI=your_mongodb_atlas_connection_string_here
 
 GOOGLE_CLIENT_ID=your_google_client_id_here
 GOOGLE_CLIENT_SECRET=your_google_client_secret_here
@@ -242,7 +277,7 @@ DEMO_MODE_ENABLED=true
 
 ### Frontend `.env.local`
 
-Create a file:
+Create:
 
 ```txt
 frontend/.env.local
@@ -382,7 +417,7 @@ Without Google connection:
 
 - Gmail uses sample demo data
 - Calendar uses sample demo data
-- Document upload still works
+- Document upload still works with real PDF/TXT files
 - Gemini chat still works
 
 With Google connection:
@@ -397,7 +432,7 @@ With Google connection:
 ```txt
 Upload PDF/TXT
      ↓
-Extract text
+Extract readable text
      ↓
 Clean text
      ↓
@@ -409,7 +444,7 @@ Retrieve relevant chunks
      ↓
 Generate grounded answer using Gemini
      ↓
-Show sources/chunks
+Show answer with source context
 ```
 
 Example questions:
@@ -420,6 +455,8 @@ what are the key points?
 explain process scheduling from this document
 what does this document say about threads?
 ```
+
+> Document upload supports TXT files and text-based PDFs. Scanned/image-based PDFs may not be readable without OCR.
 
 ---
 
@@ -452,6 +489,62 @@ uploaded_documents
 
 ---
 
+## 🚀 Deployment
+
+### Backend Deployment
+
+Backend is deployed on Render:
+
+```txt
+https://taskpilot-ai-backend-tfa5.onrender.com
+```
+
+Backend production environment variables:
+
+```txt
+PORT
+NODE_ENV
+MONGODB_URI
+GEMINI_API_KEY
+GEMINI_MODEL
+GEMINI_MAX_OUTPUT_TOKENS
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI
+FRONTEND_URL
+DEMO_MODE_ENABLED
+```
+
+### Frontend Deployment
+
+Frontend is deployed on Vercel:
+
+```txt
+https://task-pilot-ai-tau.vercel.app
+```
+
+Frontend environment variable:
+
+```txt
+NEXT_PUBLIC_API_URL=https://taskpilot-ai-backend-tfa5.onrender.com
+```
+
+### Production OAuth URLs
+
+Google OAuth redirect URI:
+
+```txt
+https://taskpilot-ai-backend-tfa5.onrender.com/api/auth/google/callback
+```
+
+Frontend origin:
+
+```txt
+https://task-pilot-ai-tau.vercel.app
+```
+
+---
+
 ## ✅ Current Status
 
 Completed:
@@ -471,82 +564,13 @@ Completed:
 - Production CORS
 - Health check endpoint
 - Clean SaaS dashboard UI
-
-Remaining:
-
-- Backend deployment
-- Frontend deployment
-- Final resume polish
+- Backend deployed on Render
+- Frontend deployed on Vercel
 
 ---
 
-## 🚀 Deployment Plan
-
-### Backend
-
-Recommended platform:
-
-```txt
-Render
-```
-
-Backend needs these environment variables:
-
-```txt
-PORT
-MONGODB_URI
-GEMINI_API_KEY
-GEMINI_MODEL
-GEMINI_MAX_OUTPUT_TOKENS
-GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET
-GOOGLE_REDIRECT_URI
-FRONTEND_URL
-DEMO_MODE_ENABLED
-```
-
-### Frontend
-
-Recommended platform:
-
-```txt
-Vercel
-```
-
-Frontend needs:
-
-```txt
-NEXT_PUBLIC_API_URL
-```
-
-After deployment:
-
-```env
-FRONTEND_URL=https://your-vercel-app.vercel.app
-GOOGLE_REDIRECT_URI=https://your-render-backend.onrender.com/api/auth/google/callback
-NEXT_PUBLIC_API_URL=https://your-render-backend.onrender.com
-```
-
 ---
 
-## 🎯 Resume Description
-
-**TaskPilot AI — Multi-Tool AI Productivity Agent**
-
-Built a full-stack AI productivity agent using Next.js, Express.js, TypeScript, MongoDB, Google OAuth, Gmail API, Calendar API, Gemini API, and document RAG. Implemented an agent pipeline with intent classification, tool routing, Gmail summarization, calendar automation, document Q&A, persistent chat history, Google token storage, demo mode, and a production-style SaaS dashboard.
-
----
-
-## 🏆 Resume Bullet Points
-
-- Built a full-stack AI productivity assistant using Next.js, Express.js, TypeScript, MongoDB, Google OAuth, Gmail API, Calendar API, and Gemini API.
-- Implemented an AI agent pipeline with intent classification, tool routing, agent trace, and Gemini-powered responses with fallback handling.
-- Developed Gmail tools for unread email summarization, email search, and draft creation using Google APIs.
-- Integrated Google Calendar tools for event querying and calendar event creation.
-- Built document RAG functionality with PDF/TXT upload, smart chunking, MongoDB storage, hybrid retrieval, Gemini-grounded answers, and source references.
-- Added user-specific chat history, document storage, Google token persistence, demo mode, and a polished SaaS-style dashboard UI.
-
----
 
 ## 📌 Future Improvements
 
@@ -559,6 +583,7 @@ Built a full-stack AI productivity agent using Next.js, Express.js, TypeScript, 
 - Test coverage
 - Logging and monitoring
 - Mobile-responsive improvements
+- OCR support for scanned/image-based PDFs
 
 ---
 
