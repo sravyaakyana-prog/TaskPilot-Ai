@@ -11,6 +11,7 @@ export type DocumentChunk = {
 
 export type StoredDocument = {
   id: string;
+  documentId?: string;
   userEmail?: string;
   fileName: string;
   uploadedAt: string;
@@ -27,8 +28,11 @@ export type DocumentSearchResult = {
 };
 
 function normalizeDocument(document: any): StoredDocument {
+  const finalDocumentId = document.documentId || document.id;
+
   return {
-    id: document.id,
+    id: finalDocumentId,
+    documentId: finalDocumentId,
     userEmail: document.userEmail || GUEST_USER_EMAIL,
     fileName: document.fileName,
     uploadedAt: document.uploadedAt,
@@ -39,14 +43,7 @@ function normalizeDocument(document: any): StoredDocument {
 
 function userFilter(userEmail: string) {
   return {
-    $or: [
-      { userEmail },
-      {
-        userEmail: {
-          $exists: false,
-        },
-      },
-    ],
+    $or: [{ userEmail }, { userEmail: { $exists: false } }],
   };
 }
 
@@ -58,7 +55,6 @@ function scoreChunk(query: string, text: string) {
     .filter(Boolean);
 
   const lowerText = text.toLowerCase();
-
   let score = 0;
 
   for (const term of queryTerms) {
@@ -78,23 +74,41 @@ export async function saveDocument(
   document: StoredDocument,
   userEmail = GUEST_USER_EMAIL
 ) {
+  const finalUserEmail = userEmail || GUEST_USER_EMAIL;
+  const finalDocumentId = document.documentId || document.id;
+
+  if (!finalDocumentId) {
+    throw new Error("Document ID is missing while saving uploaded document.");
+  }
+
   const documentToSave = {
     ...document,
-    userEmail: userEmail || GUEST_USER_EMAIL,
+    id: finalDocumentId,
+    documentId: finalDocumentId,
+    userEmail: finalUserEmail,
+    chunks: document.chunks.map((chunk) => ({
+      ...chunk,
+      documentId: chunk.documentId || finalDocumentId,
+      fileName: chunk.fileName || document.fileName,
+    })),
   };
 
-  await UploadedDocumentModel.findOneAndUpdate(
+  const savedDocument = await UploadedDocumentModel.findOneAndUpdate(
     {
-      id: document.id,
+      documentId: finalDocumentId,
+      userEmail: finalUserEmail,
     },
-    documentToSave,
+    {
+      $set: documentToSave,
+    },
     {
       upsert: true,
-      new: true,
+      returnDocument: "after",
+      setDefaultsOnInsert: true,
     }
-  );
+  ).lean();
 
-  return normalizeDocument(documentToSave);
+  return normalizeDocument(savedDocument || documentToSave);
 }
 
 export async function getDocuments(userEmail = GUEST_USER_EMAIL) {
@@ -112,8 +126,12 @@ export async function getDocumentById(
   userEmail = GUEST_USER_EMAIL
 ) {
   const document = await UploadedDocumentModel.findOne({
-    id: documentId,
-    ...userFilter(userEmail || GUEST_USER_EMAIL),
+    $and: [
+      {
+        $or: [{ id: documentId }, { documentId }],
+      },
+      userFilter(userEmail || GUEST_USER_EMAIL),
+    ],
   }).lean();
 
   if (!document) {
@@ -138,12 +156,14 @@ export async function searchDocuments(
   const results: DocumentSearchResult[] = [];
 
   for (const document of documents) {
+    const finalDocumentId = document.documentId || document.id;
+
     for (const chunk of document.chunks) {
       const score = scoreChunk(query, chunk.text);
 
       if (score > 0) {
         results.push({
-          documentId: document.id,
+          documentId: finalDocumentId,
           fileName: document.fileName,
           chunkIndex: chunk.chunkIndex,
           text: chunk.text,

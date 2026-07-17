@@ -9,7 +9,6 @@ const DocumentChunkSchema = new Schema(
     documentId: {
       type: String,
       required: true,
-      index: true,
     },
     fileName: {
       type: String,
@@ -24,7 +23,9 @@ const DocumentChunkSchema = new Schema(
       required: true,
     },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
 
 const UploadedDocumentSchema = new Schema(
@@ -32,7 +33,11 @@ const UploadedDocumentSchema = new Schema(
     id: {
       type: String,
       required: true,
-      unique: true,
+      index: true,
+    },
+    documentId: {
+      type: String,
+      required: true,
       index: true,
     },
     userEmail: {
@@ -60,6 +65,16 @@ const UploadedDocumentSchema = new Schema(
   },
   {
     timestamps: true,
+  }
+);
+
+UploadedDocumentSchema.index(
+  {
+    documentId: 1,
+    userEmail: 1,
+  },
+  {
+    unique: true,
   }
 );
 
